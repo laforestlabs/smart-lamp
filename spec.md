@@ -18,9 +18,12 @@ app over Bluetooth Low Energy (BLE).
 |---|---|---|
 | MCU | ESP32-WROOM-32D | Dual-core Xtensa LX6, 240 MHz, integrated BLE 4.2 / Wi-Fi |
 | LEDs | 31× SK6812WWA | Individually addressable, 3-channel: Warm (~2700 K), Neutral (~4000 K), Cool (~6500 K) |
-| Motion sensor | BM612 | Pyroelectric IR sensor; 3.3 V; digital output (REL pin) on IO27; sensitivity set via R5 (10 KΩ) on IO25 |
+| LED level shifter | LVC1G125 (U2) | 3.3 V → 5 V buffer on LED data line (IO19 → DIN) |
+| 3.3 V regulator | AP2114H-3_3TRG1 (U1) | 1 A LDO; powered from USB 5V |
+| Power input | USB Micro B (J1) | 5 V from host/charger; sole power source |
+| Motion sensor | BM612 (P1) | Pyroelectric IR sensor; 3.3 V; digital output (REL pin) on IO27; sensitivity set via R5 (10 KΩ) on IO25 |
 | Ambient light sensor | Phototransistor (Q1) + R3 5 KΩ pull-up | Analog voltage divider; read via ESP32 ADC on IO17 (LDR_signal net) |
-| Touch input | AT42QT1010 | Capacitive single-key touch IC; pad connected to IO13; digital OUT to IO16 (touchIC_sig net) |
+| Touch input | AT42QT1010-TSHR (U3) | Capacitive single-key touch IC; pad on IO13; digital OUT to IO16; C4 10 nF sets sensitivity |
 | Power supply | TBD — 5 V / 3 A minimum recommended | LED peak current: 31 LEDs × ~20 mA × 3 channels ≈ 1.9 A; add MCU headroom |
 
 ### 2.1 Confirmed GPIO Pin Assignments
@@ -70,14 +73,65 @@ The ESP32 ADC reads IO17; firmware maps the raw ADC count to a relative brightne
 value for auto-mode threshold comparison. Absolute lux calibration can be done at
 runtime via a one-point or two-point mapping stored in NVS.
 
-### 2.5 LED Protocol
+### 2.5 LED Physical Layout
+
+The 31 LEDs are arranged in a 7-row oval/hexagonal grid, 5 columns wide at the widest.
+Rows 0 and 6 are trimmed to 3 LEDs (columns 1–3), giving the array rounded ends.
+The data chain runs left-to-right, top-to-bottom: D1 → D2 → … → D31.
+
+```
+Column:   0      1      2      3      4
+          ────────────────────────────
+Row 0:         [ D1]  [ D2]  [ D3]
+Row 1:  [ D4]  [ D5]  [ D6]  [ D7]  [ D8]
+Row 2:  [ D9]  [D10]  [D11]  [D12]  [D13]
+Row 3:  [D14]  [D15]  [D16]  [D17]  [D18]   ← geometric centre (2, 3)
+Row 4:  [D19]  [D20]  [D21]  [D22]  [D23]
+Row 5:  [D24]  [D25]  [D26]  [D27]  [D28]
+Row 6:         [D29]  [D30]  [D31]
+```
+
+LED index to (col, row) lookup table (0-indexed, used by flame and effect algorithms):
+
+| LED | col | row | LED | col | row | LED | col | row |
+|-----|-----|-----|-----|-----|-----|-----|-----|-----|
+| D1  |  1  |  0  | D12 |  3  |  2  | D23 |  4  |  4  |
+| D2  |  2  |  0  | D13 |  4  |  2  | D24 |  0  |  5  |
+| D3  |  3  |  0  | D14 |  0  |  3  | D25 |  1  |  5  |
+| D4  |  0  |  1  | D15 |  1  |  3  | D26 |  2  |  5  |
+| D5  |  1  |  1  | D16 |  2  |  3  | D27 |  3  |  5  |
+| D6  |  2  |  1  | D17 |  3  |  3  | D28 |  4  |  5  |
+| D7  |  3  |  1  | D18 |  4  |  3  | D29 |  1  |  6  |
+| D8  |  4  |  1  | D19 |  0  |  4  | D30 |  2  |  6  |
+| D9  |  0  |  2  | D20 |  1  |  4  | D31 |  3  |  6  |
+| D10 |  1  |  2  | D21 |  2  |  4  |     |     |     |
+| D11 |  2  |  2  | D22 |  3  |  4  |     |     |     |
+
+### 2.6 LED Protocol
 
 SK6812WWA uses a single-wire NZR protocol compatible with WS2812B timing. Each LED
 consumes one 32-bit frame (4 bytes): `[W_cool | W_neutral | W_warm | unused]`. Byte order
 must be confirmed against the specific batch datasheet. The ESP32 RMT peripheral drives
 the data line; 31 LEDs requires a reset pulse (≥ 80 µs low) to latch.
 
-### 2.6 Power Budget (preliminary)
+The LED data line runs through a **LVC1G125 level-shifter** (U2) that translates the
+ESP32's 3.3 V logic to the 5 V required by the SK6812WWA DIN pin.
+
+### 2.7 Power Topology
+
+```
+USB Micro B (J1)
+  └── VBUS (+5V) ──┬──► AP2114H-3_3TRG1 LDO (U1) ──► +3.3V rail
+                   │       (ESP32, AT42QT1010, BM612, sensors)
+                   └──► +5V rail ──► SK6812WWA LEDs (via LVC1G125 data shifter)
+```
+
+- **U1 AP2114H-3_3TRG1**: 1 A LDO, input from USB 5V, output 3.3V for all logic
+- **U2 LVC1G125**: single-gate 3.3V→5V buffer on IO19 → LED DIN
+- **J1 USB Micro B**: sole power input; no external DC barrel jack on current design
+- Decoupling: C1/C2 on LDO output; C5 (10 µF) + C3 (0.1 µF) on ESP32 3V3; C4 (10 nF) on AT42QT1010 VDD
+
+### 2.8 Power Budget (preliminary)
 
 | Rail | Consumer | Max current |
 |---|---|---|
@@ -113,13 +167,25 @@ Recommended ESP-IDF version: **v5.x** (latest stable).
 
 - Use the **RMT (Remote Control) peripheral** to generate SK6812-compatible waveforms.
 - Allocate a dedicated RMT channel and DMA buffer large enough for 31 × 32 bits.
-- Expose a simple API:
+- Maintain an internal frame buffer of 31 `led_pixel_t` structs — one per LED — so that
+  effects like flame can set each LED independently before flushing.
+- Expose a layered API:
   ```c
-  void lamp_set_channel(uint8_t warm, uint8_t neutral, uint8_t cool); // 0–255 each
-  void lamp_set_master(uint8_t brightness);  // scales all channels proportionally
-  void lamp_update(void);                    // commits buffer to RMT and sends
+  /* Per-LED control (used by flame and future effects) */
+  void lamp_set_pixel(uint8_t index, uint8_t warm, uint8_t neutral, uint8_t cool);
+
+  /* Uniform fill (used by manual mode and scenes) */
+  void lamp_fill(uint8_t warm, uint8_t neutral, uint8_t cool);
+
+  /* Master brightness scale — applied at flush time, not stored in buffer */
+  void lamp_set_master(uint8_t brightness);  // 0–255
+
+  /* Commit frame buffer to RMT and send */
+  void lamp_flush(void);
   ```
-- Gamma correction LUT (2.2 or configurable) applied before writing to the RMT buffer.
+- Gamma correction LUT (2.2) applied per-channel at `lamp_flush()` time.
+- A `led_coord` lookup table (index → col, row) is compiled into firmware from the
+  layout defined in §2.5 for use by spatial effect algorithms.
 
 ### 3.3 Sensor Handling
 
@@ -174,7 +240,83 @@ Stored across power cycles:
 - Up to 16 schedules
 - BLE bond keys (managed automatically by NimBLE)
 
-### 3.7 OTA Firmware Updates
+### 3.7 Flame Mode
+
+#### Goal
+
+Simulate a candle flame by moving a bright "hot spot" across the LED array in 2D space.
+Because each LED's physical position is known (§2.5), the brightness gradient cast across
+the array mirrors a real flame's light distribution — LEDs farther from the hot spot are
+dimmer, replicating the moving shadows a candle casts on the surrounding room.
+
+#### Coordinate System
+
+The LED grid spans **cols 0–4** and **rows 0–6**, with the geometric centre at **(2.0, 3.0)**.
+Rows 0 and 6 only have columns 1–3; the algorithm treats positions in those gaps as
+unpopulated (no LED to write).
+
+#### Flame Centre Random Walk
+
+The flame centre `(fx, fy)` is a floating-point position that drifts each frame:
+
+```
+fx_new = fx + gaussian(0, σ_x) − k_restore × (fx − 2.0)
+fy_new = fy + gaussian(0, σ_y) − k_restore × (fy − bias_y)
+```
+
+- `σ_x`, `σ_y` — lateral and vertical drift speed (configurable; default σ_x = 0.25, σ_y = 0.20)
+- `k_restore` — spring constant pulling the flame back toward centre (default 0.08)
+- `bias_y` — vertical resting position; set slightly above centre (default 2.5) to
+  simulate the upward tendency of a real flame
+- `fx` is clamped to [1.0, 3.0]; `fy` clamped to [0.5, 5.5] to keep the hot spot
+  within the populated region of the array
+
+#### Per-LED Intensity
+
+Each frame, for every LED `i` at grid position `(cx_i, cy_i)`:
+
+```
+d²  = (cx_i − fx)² + (cy_i − fy)²
+I_i = master_brightness × exp(−d² / (2 × σ_flame²))
+```
+
+- `σ_flame` — Gaussian radius of the hot spot (configurable; default 1.4 grid units)
+- `I_i` is scaled 0–255 and becomes the **warm** channel value
+- **Neutral** channel = `I_i × 0.35` (a hint of neutral white at the periphery)
+- **Cool** channel = 0 (a candle has no cool component)
+
+#### Global Flicker
+
+A separate slow oscillator adds overall brightness variation independent of position:
+
+```
+flicker = 1.0 − flicker_depth × |sin(t × flicker_freq + φ)|
+```
+
+- `flicker_depth` — amplitude of the dip (default 0.15; 0 = no flicker)
+- `flicker_freq` — frequency in rad/s (default ~3–5 Hz, randomised each cycle)
+- `φ` — random phase offset, re-randomised every 0.5–2.0 s to avoid regularity
+- Applied as a final multiplier to all `I_i` values before `lamp_flush()`
+
+#### Frame Rate
+
+The flame task runs at **30 fps** (33 ms tick) on a dedicated FreeRTOS task with a
+fixed-period timer. This is fast enough for smooth motion without overloading the CPU.
+
+#### Configurable Parameters (NVS + BLE)
+
+| Parameter | Default | Description |
+|---|---|---|
+| `flame_drift_x` | 0.25 | Lateral drift standard deviation per frame |
+| `flame_drift_y` | 0.20 | Vertical drift standard deviation per frame |
+| `flame_restore` | 0.08 | Spring constant back to centre |
+| `flame_radius` | 1.4 | Gaussian σ of the hot-spot in grid units |
+| `flame_bias_y` | 2.5 | Vertical resting position (0 = top, 6 = bottom) |
+| `flicker_depth` | 0.15 | Global flicker amplitude (0–1) |
+| `flicker_speed` | 4.0 | Flicker base frequency in Hz |
+| `flame_brightness` | 200 | Master brightness ceiling (0–255) |
+
+### 3.8 OTA Firmware Updates
 
 - Uses ESP-IDF's standard **two-partition OTA scheme** (`ota_0` / `ota_1`).
 - Update flow initiated by the app writing to the OTA Control characteristic.
@@ -235,7 +377,24 @@ See §6 for full detail. Summary:
 > **Note**: Reliable schedule execution requires either an onboard RTC or Wi-Fi NTP
 > sync. See §8 (Open Questions).
 
-### 4.6 OTA Firmware Update
+### 4.6 Flame Mode
+
+- Selectable from the main mode picker alongside Manual and Auto.
+- When active, the app shows a **flame visualiser**: a live 7×5 grid preview (with the
+  corner cells greyed out) that mirrors the current hot-spot position and Gaussian falloff
+  in real-time using Notify on the LED State characteristic.
+- **Settings panel:**
+  - **Intensity** — master brightness ceiling slider (0–100 %)
+  - **Drift speed** — single slider mapping to both `flame_drift_x` / `flame_drift_y`
+    (labelled "Calm ↔ Wild")
+  - **Hot-spot size** — maps to `flame_radius` (labelled "Focused ↔ Diffuse")
+  - **Flicker** — toggle + depth slider (0–100 %)
+  - **Flicker speed** — labelled "Slow ↔ Fast"
+- Settings are written to the Flame Config characteristic and persisted to NVS on the lamp.
+- The app does **not** drive the animation — all computation runs on the ESP32. The app
+  only reflects the lamp's current state via notifications.
+
+### 4.7 OTA Firmware Update
 
 - Settings screen shows current firmware version (read from a device info characteristic).
 - "Update Firmware" button lets the user pick a `.bin` file from local storage.
@@ -254,7 +413,7 @@ See §6 for full detail. Summary:
 | Name | UUID (suffix) | Properties | Payload format |
 |---|---|---|---|
 | **LED State** | `...0001` | Read, Write, Notify | `[warm: u8, neutral: u8, cool: u8, master: u8]` |
-| **Mode** | `...0002` | Read, Write | `[mode: u8]` — `0`=manual, `1`=auto |
+| **Mode** | `...0002` | Read, Write | `[mode: u8]` — `0`=manual, `1`=auto, `2`=flame |
 | **Auto Config** | `...0003` | Read, Write | `[timeout_s: u16 LE, lux_threshold: u16 LE, dim_pct: u8, dim_duration_s: u16 LE]` |
 | **Scene Write** | `...0004` | Write | `[index: u8, name_len: u8, name: utf8[name_len], warm: u8, neutral: u8, cool: u8, master: u8]` |
 | **Scene List** | `...0005` | Read, Notify | Length-prefixed list of scenes; same struct as Scene Write |
@@ -263,7 +422,8 @@ See §6 for full detail. Summary:
 | **Sensor Data** | `...0008` | Read, Notify | `[lux: u16 LE, motion: u8]` |
 | **OTA Control** | `...0009` | Write, Notify | `[cmd: u8, ...]` — `0x01`=start, `0x02`=end, `0xFF`=abort; notify returns status |
 | **OTA Data** | `...000A` | Write Without Response | Raw firmware bytes (up to MTU−3 per write) |
-| **Device Info** | `...000B` | Read | `[fw_version: utf8]` |
+| **Flame Config** | `...000C` | Read, Write | `[drift_x: u8, drift_y: u8, restore: u8, radius: u8, bias_y: u8, flicker_depth: u8, flicker_speed: u8, brightness: u8]` — all scaled 0–255 |
+| **Device Info** | `...000D` | Read | `[fw_version: utf8]` |
 
 All multi-byte integers are **little-endian**.
 
