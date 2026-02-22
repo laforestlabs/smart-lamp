@@ -32,5 +32,8 @@ CONFIG_FREERTOS_HZ=1000
 # Log level
 CONFIG_LOG_DEFAULT_LEVEL_INFO=y
 
+# Watchdog — increase INT_WDT to allow RF calibration on first boot
+CONFIG_ESP_INT_WDT_TIMEOUT_MS=800
+
 # Compiler
 CONFIG_COMPILER_OPTIMIZATION_SIZE=y

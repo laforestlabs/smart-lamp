@@ -129,23 +129,25 @@ void ble_start_advertising(void)
         .disc_mode = BLE_GAP_DISC_MODE_GEN,
     };
 
-    /* Build advertising data */
+    /* Advertising data: flags + 128-bit service UUID (fits in 31 bytes: 3+18=21).
+     * The UUID must be in the ADV packet (not scan response) for iOS to filter on it. */
     struct ble_hs_adv_fields fields = {0};
     fields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
-    fields.name = (uint8_t *)s_device_name;
-    fields.name_len = strlen(s_device_name);
-    fields.name_is_complete = 1;
-
-    /* Include service UUID in scan response for filtering */
     ble_uuid128_t svc_uuid = SVC_UUID_BASE;
     fields.uuids128 = &svc_uuid;
     fields.num_uuids128 = 1;
     fields.uuids128_is_complete = 1;
-
     ble_gap_adv_set_fields(&fields);
 
+    /* Scan response: device name (16 bytes, fits easily) */
+    struct ble_hs_adv_fields rsp_fields = {0};
+    rsp_fields.name = (uint8_t *)s_device_name;
+    rsp_fields.name_len = strlen(s_device_name);
+    rsp_fields.name_is_complete = 1;
+    ble_gap_adv_rsp_set_fields(&rsp_fields);
+
     int rc = ble_gap_adv_start(BLE_OWN_ADDR_PUBLIC, NULL,
-                               ADV_TIMEOUT_MS / 10,  /* duration in 10ms units */
+                               ADV_TIMEOUT_MS,  /* duration in ms */
                                &adv_params, gap_event_handler, NULL);
     if (rc == 0) {
         ESP_LOGI(TAG, "Advertising started as '%s' (timeout=%ds)",
@@ -193,6 +195,15 @@ static void ble_on_sync(void)
     ble_hs_cfg.sm_sc = 1;
 
     ESP_LOGI(TAG, "BLE host synced — device name: %s", s_device_name);
+
+    /* Auto-advertise on boot if no bond is stored (first-time pairing).
+     * If already bonded, the long touch press triggers re-advertising. */
+    int bond_count = 0;
+    ble_store_util_count(BLE_STORE_OBJ_TYPE_OUR_SEC, &bond_count);
+    if (bond_count <= 0) {
+        ESP_LOGI(TAG, "No bond found — starting advertising automatically");
+        ble_start_advertising();
+    }
 }
 
 static void ble_on_reset(int reason)
