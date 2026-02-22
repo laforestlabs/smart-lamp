@@ -9,6 +9,7 @@ class SettingsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final simMode = ref.watch(simulationModeProvider);
+    final theme = Theme.of(context);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
@@ -28,6 +29,36 @@ class SettingsScreen extends ConsumerWidget {
                 );
               }
             },
+          ),
+          const Divider(),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+            child: Column(
+              children: [
+                Text(
+                  'LL',
+                  style: theme.textTheme.headlineLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: theme.colorScheme.primary,
+                    letterSpacing: 4,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Laforest Labs',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: theme.colorScheme.onSurface.withAlpha(180),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Smart Lamp v1.0.0',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurface.withAlpha(100),
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),

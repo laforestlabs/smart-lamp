@@ -41,6 +41,16 @@ class HomeScreen extends ConsumerWidget {
                     icon: const Icon(Icons.add),
                     label: const Text('Add Lamp'),
                   ),
+                  const SizedBox(height: 48),
+                  Text(
+                    'by Laforest Labs',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurface
+                              .withAlpha(100),
+                        ),
+                  ),
                 ],
               ),
             )
