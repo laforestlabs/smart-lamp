@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../ble/ble_connection_manager.dart';
 import '../models/bonded_lamp.dart';
@@ -26,6 +28,24 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
   @override
   void initState() {
     super.initState();
+    _requestPermissionsAndScan();
+  }
+
+  Future<void> _requestPermissionsAndScan() async {
+    if (Platform.isAndroid) {
+      final statuses = await [
+        Permission.bluetoothScan,
+        Permission.bluetoothConnect,
+        Permission.locationWhenInUse,
+      ].request();
+      final denied = statuses.values.any((s) => s.isDenied || s.isPermanentlyDenied);
+      if (denied && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('BLE permissions are required to scan')),
+        );
+        return;
+      }
+    }
     _startScan();
   }
 
@@ -55,15 +75,18 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
     setState(() => _connecting = true);
 
     final connManager = ref.read(connectionManagerProvider);
-    await connManager.connect(device.id);
 
-    // Wait for connection
+    // Listen before calling connect so we don't miss the event on broadcast streams
+    final stateFuture = connManager.connectionState
+        .firstWhere((s) =>
+            s == LampConnectionState.connected ||
+            s == LampConnectionState.disconnected)
+        .timeout(const Duration(seconds: 15));
+
+    connManager.connect(device.id);
+
     try {
-      final state = await connManager.connectionState
-          .firstWhere((s) =>
-              s == LampConnectionState.connected ||
-              s == LampConnectionState.disconnected)
-          .timeout(const Duration(seconds: 15));
+      final state = await stateFuture;
 
       if (state == LampConnectionState.connected) {
         // Save bonded lamp

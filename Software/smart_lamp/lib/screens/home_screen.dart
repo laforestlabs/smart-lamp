@@ -17,7 +17,15 @@ class HomeScreen extends ConsumerWidget {
     final connManager = ref.read(connectionManagerProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Smart Lamp')),
+      appBar: AppBar(
+        title: const Text('Smart Lamp'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings),
+            onPressed: () => context.push('/settings'),
+          ),
+        ],
+      ),
       body: lamps.isEmpty
           ? Center(
               child: Column(
