@@ -138,11 +138,8 @@ static void control_task(void *arg)
                     auto_mode_process_event(&evt);
                 }
 
-                /* Periodically notify BLE clients of sensor data */
-                if (evt.type == SENSOR_EVT_MOTION_START ||
-                    evt.type == SENSOR_EVT_MOTION_END) {
-                    ble_notify_sensor_data();
-                }
+                /* Notify BLE clients of sensor data on any sensor event */
+                ble_notify_sensor_data();
                 break;
             }
         }

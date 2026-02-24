@@ -6,6 +6,8 @@
 
 #include "esp_log.h"
 #include "esp_mac.h"
+#include "nvs_flash.h"
+#include "nvs.h"
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
 #include "host/ble_hs.h"
@@ -19,7 +21,7 @@ static const char *TAG = "ble_svc";
 
 static uint16_t s_conn_handle;
 static bool     s_connected = false;
-static char     s_device_name[20];
+static char     s_device_name[32];
 
 /* ── Notification helpers ── */
 
@@ -172,11 +174,24 @@ bool ble_is_connected(void)
 
 static void ble_on_sync(void)
 {
-    /* Generate device name from MAC: SmartLamp-XXXX */
-    uint8_t mac[6];
-    esp_read_mac(mac, ESP_MAC_BT);
-    snprintf(s_device_name, sizeof(s_device_name), "SmartLamp-%02X%02X",
-             mac[4], mac[5]);
+    /* Use serial number from NVS if set, otherwise fall back to MAC suffix */
+    bool name_set = false;
+    nvs_handle_t nvs;
+    if (nvs_open("lamp", NVS_READONLY, &nvs) == ESP_OK) {
+        char serial[12] = {0};
+        size_t len = sizeof(serial);
+        if (nvs_get_str(nvs, "serial_num", serial, &len) == ESP_OK && len > 1) {
+            snprintf(s_device_name, sizeof(s_device_name), "SmartLamp-%s", serial);
+            name_set = true;
+        }
+        nvs_close(nvs);
+    }
+    if (!name_set) {
+        uint8_t mac[6];
+        esp_read_mac(mac, ESP_MAC_BT);
+        snprintf(s_device_name, sizeof(s_device_name), "SmartLamp-%02X%02X",
+                 mac[4], mac[5]);
+    }
 
     ble_svc_gap_device_name_set(s_device_name);
 
@@ -196,14 +211,10 @@ static void ble_on_sync(void)
 
     ESP_LOGI(TAG, "BLE host synced — device name: %s", s_device_name);
 
-    /* Auto-advertise on boot if no bond is stored (first-time pairing).
-     * If already bonded, the long touch press triggers re-advertising. */
-    int bond_count = 0;
-    ble_store_util_count(BLE_STORE_OBJ_TYPE_OUR_SEC, &bond_count);
-    if (bond_count <= 0) {
-        ESP_LOGI(TAG, "No bond found — starting advertising automatically");
-        ble_start_advertising();
-    }
+    /* Always advertise on boot so the app can reconnect.
+     * TODO: revert to bond-check once touch button is available. */
+    ESP_LOGI(TAG, "Starting advertising automatically");
+    ble_start_advertising();
 }
 
 static void ble_on_reset(int reason)

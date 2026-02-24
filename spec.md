@@ -344,6 +344,8 @@ See §6 for full detail. Summary:
 
 ### 4.2 Manual Control Screen
 
+- **ON/OFF button** — prominent toggle at the top; sets master brightness to 0 (off) or
+  128 (on). Amber when on, grey when off.
 - Three sliders: **Warm**, **Neutral**, **Cool** (0–100 %).
 - One master **Brightness** slider (scales all channels).
 - Real-time preview: changes write immediately to the LED State characteristic.
@@ -419,7 +421,7 @@ See §6 for full detail. Summary:
 | **Scene List** | `...0005` | Read, Notify | Length-prefixed list of scenes; same struct as Scene Write |
 | **Schedule Write** | `...0006` | Write | `[index: u8, day_mask: u8, hour: u8, minute: u8, scene_index: u8, enabled: u8]` |
 | **Schedule List** | `...0007` | Read, Notify | Length-prefixed list of schedules |
-| **Sensor Data** | `...0008` | Read, Notify | `[lux: u16 LE, motion: u8]` |
+| **Sensor Data** | `...0008` | Read, Notify | `[lux: u16 LE, motion: u8]` — notified every 1 s (lux update) and on motion start/end |
 | **OTA Control** | `...0009` | Write, Notify | `[cmd: u8, ...]` — `0x01`=start, `0x02`=end, `0xFF`=abort; notify returns status |
 | **OTA Data** | `...000A` | Write Without Response | Raw firmware bytes (up to MTU−3 per write) |
 | **Flame Config** | `...000C` | Read, Write | `[drift_x: u8, drift_y: u8, restore: u8, radius: u8, bias_y: u8, flicker_depth: u8, flicker_speed: u8, brightness: u8]` — all scaled 0–255 |
@@ -460,9 +462,10 @@ App reads Device Info, LED State, Mode, Scene List, Schedule List │
 UI transitions to main control screen                             │
 
 [Subsequent sessions]
-App auto-scans for bonded lamp on foreground and reconnects silently.
-Lamp only advertises on touch-pad long press; it does not broadcast continuously
-when idle (saves power).
+App auto-connects to the first bonded lamp on launch and navigates directly
+to the control screen once connected. Lamp only advertises on touch-pad long
+press; it does not broadcast continuously when idle (saves power).
+(Temporary: lamp always advertises on boot — see §8.4.)
 ```
 
 ---
@@ -504,7 +507,52 @@ when idle (saves power).
 
 ---
 
-## 8. Open Questions / TBD
+## 8. Hardware Bring-Up Notes
+
+### 8.1 Programmer Fixture Power Limitation
+
+The ifuturetech ESP32-WROOM burning fixture can flash firmware successfully but **cannot
+supply enough current** for the ESP32's RF calibration during BLE initialisation. The
+`register_chipv7_phy()` call draws a current spike that causes the board to reset in an
+infinite boot loop (`SW_CPU_RESET`).
+
+**Workaround:** Disconnect the 3V3 line from the programmer fixture and power the board
+from its own USB supply. Keep GND, TX, and RX connected to the jig for serial monitoring.
+The fixture's auto-reset (DTR/RTS) still works for flashing when 3V3 is connected; just
+disconnect it before booting with BLE.
+
+### 8.2 PHY Calibration
+
+- `CONFIG_ESP_PHY_RF_CAL_PARTIAL=y` and `CONFIG_ESP_PHY_CALIBRATION_AND_DATA_STORAGE=y`
+  are the correct sdkconfig settings.
+- On first boot after a full erase, the PHY performs a full calibration and stores the
+  result in the `phy_init` NVS partition. Subsequent boots use the stored data (partial
+  cal only).
+- **Do not** modify `esp_phy/src/phy_init.c` to change the fallback calibration mode —
+  the default (`PHY_RF_CAL_FULL` when no stored data exists) is correct.
+
+### 8.3 Board Status (as of 2026-02-24)
+
+| Board | MAC | Status |
+|---|---|---|
+| SmartLamp-6B68 | 30:ae:a4:07:6b:68 | Flashed, functional |
+| SmartLamp-59D0 / 59D2 | 30:ae:a4:07:59:d0 (base) | Flashed, BLE working. Motion sensor verified. LEDs and light sensor need PCB rework. |
+
+**Verified working:** BLE advertising, BLE connection + bonding, MTU 512 negotiation,
+GATT read/write/notify, PIR motion detection, mode switching (manual/auto/flame).
+
+**Not yet verified (pending PCB fixes):** LED output, ambient light sensor ADC reading.
+
+### 8.4 Temporary Firmware Behaviour
+
+- **Always advertise on boot:** The lamp starts BLE advertising automatically on every
+  power-up, regardless of existing bonds. This is a temporary measure because the touch
+  button hardware is not yet functional. Revert to bond-count check + touch long-press
+  once the AT42QT1010 circuit is verified.
+
+---
+
+## 9. Open Questions / TBD
 
 | # | Item | Notes |
 |---|---|---|

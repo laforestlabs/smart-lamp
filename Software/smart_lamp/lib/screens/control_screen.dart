@@ -67,6 +67,41 @@ class ControlScreen extends ConsumerWidget {
           const Divider(),
           if (mode == LampMode.manual) ...[
             Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              child: SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: FilledButton.icon(
+                  onPressed: () {
+                    final notifier = ref.read(lampStateProvider.notifier);
+                    if (ledState.master > 0) {
+                      notifier.setMaster(0);
+                    } else {
+                      notifier.setMaster(128);
+                    }
+                  },
+                  icon: Icon(
+                    ledState.master > 0
+                        ? Icons.lightbulb
+                        : Icons.lightbulb_outline,
+                    size: 28,
+                  ),
+                  label: Text(
+                    ledState.master > 0 ? 'ON' : 'OFF',
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: ledState.master > 0
+                        ? Colors.amber
+                        : Colors.grey.shade800,
+                    foregroundColor: ledState.master > 0
+                        ? Colors.black
+                        : Colors.white,
+                  ),
+                ),
+              ),
+            ),
+            Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Text('Colour Temperature',
                   style: Theme.of(context).textTheme.titleSmall),

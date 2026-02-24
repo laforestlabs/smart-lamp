@@ -7,14 +7,52 @@ import '../providers/ble_provider.dart';
 import '../providers/device_list_provider.dart';
 import '../widgets/lamp_card.dart';
 
-class HomeScreen extends ConsumerWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen> {
+  bool _autoConnectAttempted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Auto-connect on next frame so providers are ready
+    WidgetsBinding.instance.addPostFrameCallback((_) => _tryAutoConnect());
+  }
+
+  void _tryAutoConnect() {
+    if (_autoConnectAttempted) return;
+    _autoConnectAttempted = true;
+
+    final lamps = ref.read(deviceListProvider);
+    final connManager = ref.read(connectionManagerProvider);
+    if (lamps.isNotEmpty && connManager.deviceId == null) {
+      connManager.connect(lamps.first.deviceId);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ref = this.ref;
     final lamps = ref.watch(deviceListProvider);
     final connState = ref.watch(connectionStateProvider);
     final connManager = ref.read(connectionManagerProvider);
+
+    // Auto-navigate to control screen once connected
+    ref.listen<AsyncValue<LampConnectionState>>(connectionStateProvider,
+        (prev, next) {
+      final prevState = prev?.valueOrNull;
+      final nextState = next.valueOrNull;
+      if (prevState != LampConnectionState.connected &&
+          nextState == LampConnectionState.connected &&
+          connManager.deviceId != null) {
+        context.push('/control/${connManager.deviceId}');
+      }
+    });
 
     return Scaffold(
       appBar: AppBar(
