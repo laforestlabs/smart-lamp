@@ -110,7 +110,7 @@ LED index to (col, row) lookup table (0-indexed, used by flame and effect algori
 ### 2.6 LED Protocol
 
 SK6812WWA uses a single-wire NZR protocol compatible with WS2812B timing. Each LED
-consumes one **24-bit frame (3 bytes)**: `[cool | neutral | warm]`. *(Confirmed on
+consumes one **24-bit frame (3 bytes)**: `[cool | warm | neutral]`. *(Confirmed on
 SN001 hardware — not 32-bit like SK6812 RGBW.)* The ESP32 RMT peripheral drives
 the data line; 31 LEDs requires a reset pulse (≥ 80 µs low) to latch.
 
@@ -557,7 +557,7 @@ GATT read/write/notify, PIR motion detection, mode switching (manual/auto/flame)
 
 | # | Item | Notes |
 |---|---|---|
-| ~~1~~ | ~~SK6812WWA byte order~~ | **Resolved:** 24-bit `[cool, neutral, warm]` — confirmed on SN001 hardware |
+| ~~1~~ | ~~SK6812WWA byte order~~ | **Resolved:** 24-bit `[cool, warm, neutral]` — confirmed on SN001 hardware |
 | 2 | Power supply spec | Confirm rail voltages, connector type, and current headroom with enclosure design |
 | 3 | Enclosure / PCB | Mechanical design, LED diffuser, touch pad placement |
 | 4 | Schedule timekeeping | Add external RTC (e.g. DS3231 over I2C) **or** enable Wi-Fi + SNTP for NTP sync; without one of these, schedules will drift after power cycles |
