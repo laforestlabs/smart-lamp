@@ -13,7 +13,7 @@ class FlameConfig {
     this.driftY = 51,
     this.restore = 20,
     this.radius = 91,
-    this.biasY = 91,
+    this.biasY = 128,
     this.flickerDepth = 38,
     this.flickerSpeed = 128,
     this.brightness = 200,

@@ -285,7 +285,7 @@ esp_err_t lamp_nvs_load_flame_config(flame_config_t *cfg)
         cfg->drift_y        = 51;    /* 0.20 * 255 */
         cfg->restore        = 20;    /* 0.08 * 255 */
         cfg->radius         = 91;    /* 1.4 / 4.0 * 255 ≈ 89 (scaled to max radius ~4) */
-        cfg->bias_y         = 91;    /* 2.5 / 7.0 * 255 ≈ 91 */
+        cfg->bias_y         = 128;   /* 3.0 / 6.0 * 255 ≈ 128 — grid centre */
         cfg->flicker_depth  = 38;    /* 0.15 * 255 */
         cfg->flicker_speed  = 128;   /* mid-range */
         cfg->brightness     = 200;
