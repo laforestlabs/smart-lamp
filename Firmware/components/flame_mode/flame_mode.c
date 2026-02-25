@@ -33,6 +33,11 @@ static TaskHandle_t     s_task;
 static volatile bool    s_running;
 static flame_config_t   s_cfg;
 
+/* Base colour ratios (0.0–1.0) — set from active scene */
+static float s_ratio_w = 1.0f;
+static float s_ratio_n = 0.0f;
+static float s_ratio_c = 0.0f;
+
 /* ── Gaussian random (Box-Muller) ── */
 
 static float randf_uniform(void)
@@ -107,6 +112,11 @@ static void flame_task(void *arg)
         /* ── Per-LED intensity ── */
         float two_sigma_sq = 2.0f * sigma_flame * sigma_flame;
 
+        /* Snapshot colour ratios (may be updated from another task) */
+        float rw = s_ratio_w;
+        float rn = s_ratio_n;
+        float rc = s_ratio_c;
+
         for (int i = 0; i < LED_COUNT; i++) {
             float cx = (float)led_coords[i].col;
             float cy = (float)led_coords[i].row;
@@ -118,10 +128,11 @@ static void flame_task(void *arg)
             if (intensity < 0.0f) intensity = 0.0f;
             if (intensity > 255.0f) intensity = 255.0f;
 
-            uint8_t warm    = (uint8_t)intensity;
-            uint8_t neutral = (uint8_t)(intensity * 0.35f);
+            uint8_t w = (uint8_t)(intensity * rw);
+            uint8_t n = (uint8_t)(intensity * rn);
+            uint8_t c = (uint8_t)(intensity * rc);
 
-            lamp_set_pixel(i, warm, neutral, 0);
+            lamp_set_pixel(i, w, n, c);
         }
 
         lamp_set_master(255);   /* master already baked into intensity */
@@ -171,6 +182,21 @@ esp_err_t flame_mode_set_config(const flame_config_t *cfg)
 void flame_mode_get_config(flame_config_t *cfg)
 {
     *cfg = s_cfg;
+}
+
+void flame_mode_set_color(uint8_t warm, uint8_t neutral, uint8_t cool)
+{
+    float total = (float)warm + (float)neutral + (float)cool;
+    if (total < 1.0f) {
+        /* Default to warm-only if all channels zero */
+        s_ratio_w = 1.0f;
+        s_ratio_n = 0.0f;
+        s_ratio_c = 0.0f;
+    } else {
+        s_ratio_w = (float)warm / total;
+        s_ratio_n = (float)neutral / total;
+        s_ratio_c = (float)cool / total;
+    }
 }
 
 bool flame_mode_is_active(void)

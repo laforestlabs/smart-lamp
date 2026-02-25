@@ -57,6 +57,8 @@ static void start_mode(uint8_t mode)
         auto_mode_enable();
         break;
     case MODE_FLAME:
+        flame_mode_set_color(s_active_scene.warm, s_active_scene.neutral,
+                             s_active_scene.cool);
         flame_mode_start();
         break;
     }
@@ -91,6 +93,8 @@ void lamp_control_apply_scene(const scene_t *scene)
         lamp_fill(scene->warm, scene->neutral, scene->cool);
         lamp_set_master(scene->master);
         lamp_flush();
+    } else if (s_mode == MODE_FLAME) {
+        flame_mode_set_color(scene->warm, scene->neutral, scene->cool);
     }
 }
 

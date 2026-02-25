@@ -29,6 +29,13 @@ esp_err_t flame_mode_set_config(const flame_config_t *cfg);
 void flame_mode_get_config(flame_config_t *cfg);
 
 /**
+ * Set the base colour for the flame effect.
+ * The flame animation modulates intensity while keeping this colour ratio
+ * constant across all pixels.  Call this when the active scene changes.
+ */
+void flame_mode_set_color(uint8_t warm, uint8_t neutral, uint8_t cool);
+
+/**
  * Returns true if the flame task is currently running.
  */
 bool flame_mode_is_active(void);
