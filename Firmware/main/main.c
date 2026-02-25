@@ -22,8 +22,9 @@ void app_main(void)
     /* 2. Check OTA rollback status */
     lamp_ota_check_rollback();
 
-    /* 3. Initialise the LED driver (RMT channel on IO19) */
+    /* 3. Initialise the LED driver (RMT channel on IO19) and clear any residual state */
     ESP_ERROR_CHECK(led_driver_init());
+    lamp_off();
 
     /* 4. Initialise sensors — creates the shared event queue */
     QueueHandle_t sensor_queue = xQueueCreate(16, sizeof(sensor_event_t));

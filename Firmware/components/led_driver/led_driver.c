@@ -21,8 +21,8 @@ static SemaphoreHandle_t  s_mutex;
 static rmt_channel_handle_t s_rmt_chan;
 static rmt_encoder_handle_t s_encoder;
 
-/* TX buffer: 4 bytes per LED [warm, neutral, cool, 0x00] */
-static uint8_t s_tx_buf[LED_COUNT * 4];
+/* TX buffer: 3 bytes per LED [cool, neutral, warm] — SK6812WWA 24-bit protocol */
+static uint8_t s_tx_buf[LED_COUNT * 3];
 
 esp_err_t led_driver_init(void)
 {
@@ -101,10 +101,10 @@ void lamp_flush(void)
         uint8_t n = (uint16_t)s_framebuf[i].neutral * master / 255;
         uint8_t c = (uint16_t)s_framebuf[i].cool    * master / 255;
 
-        s_tx_buf[i * 4 + 0] = gamma_correct(w);
-        s_tx_buf[i * 4 + 1] = gamma_correct(n);
-        s_tx_buf[i * 4 + 2] = gamma_correct(c);
-        s_tx_buf[i * 4 + 3] = 0x00;
+        /* SK6812WWA byte order: [cool, neutral, warm] */
+        s_tx_buf[i * 3 + 0] = gamma_correct(c);
+        s_tx_buf[i * 3 + 1] = gamma_correct(n);
+        s_tx_buf[i * 3 + 2] = gamma_correct(w);
     }
     xSemaphoreGive(s_mutex);
 

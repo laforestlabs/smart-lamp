@@ -110,8 +110,8 @@ LED index to (col, row) lookup table (0-indexed, used by flame and effect algori
 ### 2.6 LED Protocol
 
 SK6812WWA uses a single-wire NZR protocol compatible with WS2812B timing. Each LED
-consumes one 32-bit frame (4 bytes): `[W_cool | W_neutral | W_warm | unused]`. Byte order
-must be confirmed against the specific batch datasheet. The ESP32 RMT peripheral drives
+consumes one **24-bit frame (3 bytes)**: `[cool | neutral | warm]`. *(Confirmed on
+SN001 hardware — not 32-bit like SK6812 RGBW.)* The ESP32 RMT peripheral drives
 the data line; 31 LEDs requires a reset pulse (≥ 80 µs low) to latch.
 
 The LED data line runs through a **LVC1G125 level-shifter** (U2) that translates the
@@ -533,10 +533,11 @@ disconnect it before booting with BLE.
 
 ### 8.3 Board Status (as of 2026-02-24)
 
-| Board | MAC | Status |
-|---|---|---|
-| SmartLamp-6B68 | 30:ae:a4:07:6b:68 | Flashed, functional |
-| SmartLamp-59D0 / 59D2 | 30:ae:a4:07:59:d0 (base) | Flashed, BLE working. Motion sensor verified. LEDs and light sensor need PCB rework. |
+| Board | MAC (BT) | Device Name | Status |
+|---|---|---|---|
+| SN001 | c4:4f:33:11:aa:9f | SmartLamp-AA9F | Flashed, BLE working. LEDs and light sensor need PCB rework. |
+| SN002 | 30:ae:a4:07:59:d2 | SmartLamp-59D2 | Flashed, BLE working. Motion sensor verified. LEDs and light sensor need PCB rework. |
+| SmartLamp-6B68 | 30:ae:a4:07:6b:68 | SmartLamp-6B68 | Flashed, functional |
 
 **Verified working:** BLE advertising, BLE connection + bonding, MTU 512 negotiation,
 GATT read/write/notify, PIR motion detection, mode switching (manual/auto/flame).
@@ -556,7 +557,7 @@ GATT read/write/notify, PIR motion detection, mode switching (manual/auto/flame)
 
 | # | Item | Notes |
 |---|---|---|
-| 1 | SK6812WWA byte order | Verify `[cool, neutral, warm, X]` from the specific batch datasheet |
+| ~~1~~ | ~~SK6812WWA byte order~~ | **Resolved:** 24-bit `[cool, neutral, warm]` — confirmed on SN001 hardware |
 | 2 | Power supply spec | Confirm rail voltages, connector type, and current headroom with enclosure design |
 | 3 | Enclosure / PCB | Mechanical design, LED diffuser, touch pad placement |
 | 4 | Schedule timekeeping | Add external RTC (e.g. DS3231 over I2C) **or** enable Wi-Fi + SNTP for NTP sync; without one of these, schedules will drift after power cycles |
