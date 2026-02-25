@@ -7,12 +7,16 @@
 static const char *TAG = "sensor_touch";
 
 #define LONG_PRESS_US   (3000000)   /* 3 seconds */
-#define DEBOUNCE_US     (50000)     /* 50 ms */
+#define DEBOUNCE_US     (50000)     /* 50 ms — edge debounce */
+#define MIN_PRESS_US    (150000)    /* 150 ms — reject bounces shorter than this */
+#define LOCKOUT_US      (500000)    /* 500 ms — post-event lockout */
 
 static QueueHandle_t    s_queue;
 static esp_timer_handle_t s_long_timer;
 static int64_t          s_last_edge_us;
-static bool             s_long_fired;
+static int64_t          s_press_start_us;
+static int64_t          s_last_event_us;
+static volatile bool    s_long_fired;
 
 static void long_press_cb(void *arg)
 {
@@ -28,21 +32,28 @@ static void IRAM_ATTR touch_isr_handler(void *arg)
 {
     int64_t now = esp_timer_get_time();
 
-    /* Debounce */
+    /* Edge debounce — ignore edges too close together */
     if ((now - s_last_edge_us) < DEBOUNCE_US) return;
     s_last_edge_us = now;
 
     int level = gpio_get_level(TOUCH_OUT_GPIO);
 
     if (level) {
-        /* Rising edge: touch started — start long-press timer */
+        /* Rising edge: touch started — record time, start long-press timer */
+        s_press_start_us = now;
         s_long_fired = false;
+        esp_timer_stop(s_long_timer);   /* stop in case it's still running */
         esp_timer_start_once(s_long_timer, LONG_PRESS_US);
     } else {
         /* Falling edge: touch released */
         esp_timer_stop(s_long_timer);
-        if (!s_long_fired) {
-            /* Short tap */
+
+        int64_t held = now - s_press_start_us;
+
+        if (!s_long_fired &&
+            held >= MIN_PRESS_US &&
+            (now - s_last_event_us) >= LOCKOUT_US) {
+            s_last_event_us = now;
             sensor_event_t evt = { .type = SENSOR_EVT_TOUCH_SHORT };
             xQueueSendFromISR(s_queue, &evt, NULL);
         }
