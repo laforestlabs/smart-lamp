@@ -84,34 +84,43 @@ final lampStateProvider =
   );
 });
 
-class LampModeNotifier extends StateNotifier<LampMode> {
+class ModeFlagsNotifier extends StateNotifier<ModeFlags> {
   final BleService _bleService;
   final BleConnectionManager _connManager;
 
-  LampModeNotifier(this._bleService, this._connManager)
-      : super(LampMode.manual) {
-    if (_connManager.initialMode != null) {
-      state = _connManager.initialMode!;
+  ModeFlagsNotifier(this._bleService, this._connManager)
+      : super(const ModeFlags()) {
+    if (_connManager.initialModeFlags != null) {
+      state = _connManager.initialModeFlags!;
     }
   }
 
-  Future<void> setMode(LampMode mode) async {
-    state = mode;
+  Future<void> setAuto(bool enabled) async {
+    state = state.copyWith(autoEnabled: enabled);
+    await _writeFlags();
+  }
+
+  Future<void> setFlame(bool enabled) async {
+    state = state.copyWith(flameEnabled: enabled);
+    await _writeFlags();
+  }
+
+  Future<void> _writeFlags() async {
     final deviceId = _connManager.deviceId;
     if (deviceId == null) return;
     try {
       await _bleService.writeCharacteristic(
         deviceId,
         BleUuids.mode,
-        BleCodec.encodeMode(mode),
+        BleCodec.encodeModeFlags(state),
       );
     } catch (_) {}
   }
 }
 
-final lampModeProvider =
-    StateNotifierProvider<LampModeNotifier, LampMode>((ref) {
-  return LampModeNotifier(
+final modeFlagsProvider =
+    StateNotifierProvider<ModeFlagsNotifier, ModeFlags>((ref) {
+  return ModeFlagsNotifier(
     ref.watch(bleServiceProvider),
     ref.watch(connectionManagerProvider),
   );

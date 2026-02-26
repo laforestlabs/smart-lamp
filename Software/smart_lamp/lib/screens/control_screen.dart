@@ -21,7 +21,7 @@ class ControlScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final connState = ref.watch(connectionStateProvider);
-    final mode = ref.watch(lampModeProvider);
+    final flags = ref.watch(modeFlagsProvider);
     final ledState = ref.watch(lampStateProvider);
 
     return Scaffold(
@@ -53,20 +53,15 @@ class ControlScreen extends ConsumerWidget {
       body: ListView(
         children: [
           const SizedBox(height: 8),
-          ModePicker(
-            selected: mode,
-            onChanged: (m) {
-              ref.read(lampModeProvider.notifier).setMode(m);
-              if (m == LampMode.flame) {
-                context.push('/control/$deviceId/flame');
-              } else if (m == LampMode.auto) {
-                context.push('/control/$deviceId/auto');
-              }
-            },
+          ModeToggles(
+            flags: flags,
+            onAutoChanged: (v) =>
+                ref.read(modeFlagsProvider.notifier).setAuto(v),
+            onFlameChanged: (v) =>
+                ref.read(modeFlagsProvider.notifier).setFlame(v),
           ),
           const Divider(),
-          if (mode == LampMode.manual) ...[
-            Padding(
+          Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               child: SizedBox(
                 width: double.infinity,
@@ -101,71 +96,70 @@ class ControlScreen extends ConsumerWidget {
                 ),
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Text('Colour Temperature',
-                  style: Theme.of(context).textTheme.titleSmall),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Text('Colour Temperature',
+                style: Theme.of(context).textTheme.titleSmall),
+          ),
+          ChannelSlider(
+            label: 'Warm',
+            value: ledState.warm,
+            color: Colors.amber,
+            onChanged: (v) => ref.read(lampStateProvider.notifier).setWarm(v),
+          ),
+          ChannelSlider(
+            label: 'Neutral',
+            value: ledState.neutral,
+            color: Colors.white70,
+            onChanged: (v) => ref.read(lampStateProvider.notifier).setNeutral(v),
+          ),
+          ChannelSlider(
+            label: 'Cool',
+            value: ledState.cool,
+            color: Colors.lightBlue,
+            onChanged: (v) => ref.read(lampStateProvider.notifier).setCool(v),
+          ),
+          const Divider(),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Text('Brightness',
+                style: Theme.of(context).textTheme.titleSmall),
+          ),
+          BrightnessSlider(
+            value: ledState.master,
+            onChanged: (v) => ref.read(lampStateProvider.notifier).setMaster(v),
+          ),
+          const SizedBox(height: 16),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: OutlinedButton.icon(
+              onPressed: () async {
+                final name = await showDialog<String>(
+                  context: context,
+                  builder: (_) => const SaveSceneDialog(),
+                );
+                if (name != null) {
+                  final scenes = ref.read(sceneListProvider);
+                  final index = scenes.isEmpty
+                      ? 0
+                      : scenes.map((s) => s.index).reduce((a, b) => a > b ? a : b) + 1;
+                  ref.read(sceneListProvider.notifier).saveScene(
+                        Scene(
+                          index: index,
+                          name: name,
+                          warm: ledState.warm,
+                          neutral: ledState.neutral,
+                          cool: ledState.cool,
+                          master: ledState.master,
+                        ),
+                      );
+                }
+              },
+              icon: const Icon(Icons.save),
+              label: const Text('Save as Scene'),
             ),
-            ChannelSlider(
-              label: 'Warm',
-              value: ledState.warm,
-              color: Colors.amber,
-              onChanged: (v) => ref.read(lampStateProvider.notifier).setWarm(v),
-            ),
-            ChannelSlider(
-              label: 'Neutral',
-              value: ledState.neutral,
-              color: Colors.white70,
-              onChanged: (v) => ref.read(lampStateProvider.notifier).setNeutral(v),
-            ),
-            ChannelSlider(
-              label: 'Cool',
-              value: ledState.cool,
-              color: Colors.lightBlue,
-              onChanged: (v) => ref.read(lampStateProvider.notifier).setCool(v),
-            ),
-            const Divider(),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Text('Brightness',
-                  style: Theme.of(context).textTheme.titleSmall),
-            ),
-            BrightnessSlider(
-              value: ledState.master,
-              onChanged: (v) => ref.read(lampStateProvider.notifier).setMaster(v),
-            ),
-            const SizedBox(height: 16),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: OutlinedButton.icon(
-                onPressed: () async {
-                  final name = await showDialog<String>(
-                    context: context,
-                    builder: (_) => const SaveSceneDialog(),
-                  );
-                  if (name != null) {
-                    final scenes = ref.read(sceneListProvider);
-                    final index = scenes.isEmpty
-                        ? 0
-                        : scenes.map((s) => s.index).reduce((a, b) => a > b ? a : b) + 1;
-                    ref.read(sceneListProvider.notifier).saveScene(
-                          Scene(
-                            index: index,
-                            name: name,
-                            warm: ledState.warm,
-                            neutral: ledState.neutral,
-                            cool: ledState.cool,
-                            master: ledState.master,
-                          ),
-                        );
-                  }
-                },
-                icon: const Icon(Icons.save),
-                label: const Text('Save as Scene'),
-              ),
-            ),
-          ],
-          if (mode == LampMode.auto)
+          ),
+          if (flags.autoEnabled)
             Padding(
               padding: const EdgeInsets.all(16),
               child: Card(
@@ -178,13 +172,13 @@ class ControlScreen extends ConsumerWidget {
                 ),
               ),
             ),
-          if (mode == LampMode.flame)
+          if (flags.flameEnabled)
             Padding(
               padding: const EdgeInsets.all(16),
               child: Card(
                 child: ListTile(
                   leading: const Icon(Icons.local_fire_department),
-                  title: const Text('Flame Mode Active'),
+                  title: const Text('Flame Effect Active'),
                   subtitle: const Text('Simulated candle flame animation'),
                   trailing: const Icon(Icons.arrow_forward_ios, size: 16),
                   onTap: () => context.push('/control/$deviceId/flame'),

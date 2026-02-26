@@ -46,10 +46,10 @@ typedef struct {
     uint8_t brightness;
 } flame_config_t;
 
-/* Lamp modes */
-#define MODE_MANUAL  0
-#define MODE_AUTO    1
-#define MODE_FLAME   2
+/* Lamp mode flags (bitmask) */
+#define MODE_FLAG_AUTO   (1 << 0)   /* 0x01 */
+#define MODE_FLAG_FLAME  (1 << 1)   /* 0x02 */
+#define MODE_FLAGS_MASK  (MODE_FLAG_AUTO | MODE_FLAG_FLAME)
 
 /**
  * Initialise NVS flash.  Must be called before any other lamp_nvs function.

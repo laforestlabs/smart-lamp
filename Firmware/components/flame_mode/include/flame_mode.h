@@ -40,6 +40,12 @@ void flame_mode_set_color(uint8_t warm, uint8_t neutral, uint8_t cool);
  */
 bool flame_mode_is_active(void);
 
+/**
+ * Set a master brightness override (0–255).
+ * Used by auto mode to dim the flame effect.  Resets to 255 on start.
+ */
+void flame_mode_set_master_override(uint8_t master);
+
 #ifdef __cplusplus
 }
 #endif

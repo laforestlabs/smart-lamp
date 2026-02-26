@@ -2,40 +2,39 @@ import 'package:flutter/material.dart';
 
 import '../models/lamp_state.dart';
 
-class ModePicker extends StatelessWidget {
-  final LampMode selected;
-  final ValueChanged<LampMode> onChanged;
+class ModeToggles extends StatelessWidget {
+  final ModeFlags flags;
+  final ValueChanged<bool> onAutoChanged;
+  final ValueChanged<bool> onFlameChanged;
 
-  const ModePicker({
+  const ModeToggles({
     super.key,
-    required this.selected,
-    required this.onChanged,
+    required this.flags,
+    required this.onAutoChanged,
+    required this.onFlameChanged,
   });
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: SegmentedButton<LampMode>(
-        segments: const [
-          ButtonSegment(
-            value: LampMode.manual,
-            label: Text('Manual'),
-            icon: Icon(Icons.tune),
+      child: Column(
+        children: [
+          SwitchListTile(
+            title: const Text('Auto Mode'),
+            subtitle: const Text('Motion-activated on/off'),
+            secondary: const Icon(Icons.sensors),
+            value: flags.autoEnabled,
+            onChanged: onAutoChanged,
           ),
-          ButtonSegment(
-            value: LampMode.auto,
-            label: Text('Auto'),
-            icon: Icon(Icons.sensors),
-          ),
-          ButtonSegment(
-            value: LampMode.flame,
-            label: Text('Flame'),
-            icon: Icon(Icons.local_fire_department),
+          SwitchListTile(
+            title: const Text('Flame Effect'),
+            subtitle: const Text('Animated candle flame'),
+            secondary: const Icon(Icons.local_fire_department),
+            value: flags.flameEnabled,
+            onChanged: onFlameChanged,
           ),
         ],
-        selected: {selected},
-        onSelectionChanged: (set) => onChanged(set.first),
       ),
     );
   }

@@ -27,7 +27,7 @@ class BleConnectionManager {
 
   // Initial state read on connect
   LedState? initialLedState;
-  LampMode? initialMode;
+  ModeFlags? initialModeFlags;
   AutoConfig? initialAutoConfig;
   FlameConfig? initialFlameConfig;
   List<Scene>? initialScenes;
@@ -93,7 +93,7 @@ class BleConnectionManager {
 
       final modeBytes =
           await _bleService.readCharacteristic(deviceId, BleUuids.mode);
-      initialMode = BleCodec.decodeMode(modeBytes);
+      initialModeFlags = BleCodec.decodeModeFlags(modeBytes);
 
       final autoBytes =
           await _bleService.readCharacteristic(deviceId, BleUuids.autoConfig);

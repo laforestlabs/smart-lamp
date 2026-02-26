@@ -97,14 +97,16 @@ void lamp_flush(void)
     xSemaphoreTake(s_mutex, portMAX_DELAY);
     uint8_t master = s_master;
     for (int i = 0; i < LED_COUNT; i++) {
-        uint8_t w = (uint16_t)s_framebuf[i].warm    * master / 255;
-        uint8_t n = (uint16_t)s_framebuf[i].neutral * master / 255;
-        uint8_t c = (uint16_t)s_framebuf[i].cool    * master / 255;
+        /* Gamma correct first, then scale by master — avoids crushing
+         * low values into the gamma dead zone at low brightness */
+        uint8_t w = (uint16_t)gamma_correct(s_framebuf[i].warm)    * master / 255;
+        uint8_t n = (uint16_t)gamma_correct(s_framebuf[i].neutral) * master / 255;
+        uint8_t c = (uint16_t)gamma_correct(s_framebuf[i].cool)    * master / 255;
 
         /* SK6812WWA byte order: [cool, warm, neutral] */
-        s_tx_buf[i * 3 + 0] = gamma_correct(c);
-        s_tx_buf[i * 3 + 1] = gamma_correct(w);
-        s_tx_buf[i * 3 + 2] = gamma_correct(n);
+        s_tx_buf[i * 3 + 0] = c;
+        s_tx_buf[i * 3 + 1] = w;
+        s_tx_buf[i * 3 + 2] = n;
     }
     xSemaphoreGive(s_mutex);
 

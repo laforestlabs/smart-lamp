@@ -72,22 +72,22 @@ static int led_state_access(uint16_t conn_handle, uint16_t attr_handle,
     return BLE_ATT_ERR_UNLIKELY;
 }
 
-/* ── Mode (0002): R/W — [mode: u8] ── */
+/* ── Mode Flags (0002): R/W — [flags: u8 bitmask] ── */
 
 static int mode_access(uint16_t conn_handle, uint16_t attr_handle,
                        struct ble_gatt_access_ctxt *ctxt, void *arg)
 {
     if (ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR) {
-        uint8_t mode = lamp_control_get_mode();
-        os_mbuf_append(ctxt->om, &mode, 1);
+        uint8_t flags = lamp_control_get_flags();
+        os_mbuf_append(ctxt->om, &flags, 1);
         return 0;
     }
 
     if (ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR) {
-        uint8_t mode;
-        os_mbuf_copydata(ctxt->om, 0, 1, &mode);
-        if (mode > MODE_FLAME) return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
-        lamp_control_set_mode(mode);
+        uint8_t flags;
+        os_mbuf_copydata(ctxt->om, 0, 1, &flags);
+        if (flags & ~MODE_FLAGS_MASK) return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+        lamp_control_set_flags(flags);
         return 0;
     }
     return BLE_ATT_ERR_UNLIKELY;

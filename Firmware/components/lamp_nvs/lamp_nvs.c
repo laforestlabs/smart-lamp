@@ -101,7 +101,7 @@ esp_err_t lamp_nvs_load_mode(uint8_t *mode)
     xSemaphoreGive(s_mutex);
 
     if (ret == ESP_ERR_NVS_NOT_FOUND) {
-        *mode = MODE_MANUAL;
+        *mode = 0;  /* no flags = manual */
         return ESP_OK;
     }
     return ret;

@@ -17,14 +17,14 @@ extern "C" {
 esp_err_t lamp_control_init(QueueHandle_t sensor_queue);
 
 /**
- * Get the current operating mode (MODE_MANUAL, MODE_AUTO, MODE_FLAME).
+ * Get the current mode flags bitmask (MODE_FLAG_AUTO | MODE_FLAG_FLAME).
  */
-uint8_t lamp_control_get_mode(void);
+uint8_t lamp_control_get_flags(void);
 
 /**
- * Switch to a new operating mode.  Stops/starts mode-specific tasks.
+ * Set mode flags bitmask.  Independently starts/stops auto and flame.
  */
-void lamp_control_set_mode(uint8_t mode);
+void lamp_control_set_flags(uint8_t flags);
 
 /**
  * Apply a scene immediately (used from BLE writes and NVS restore).

@@ -32,6 +32,7 @@ static const char *TAG = "flame";
 static TaskHandle_t     s_task;
 static volatile bool    s_running;
 static flame_config_t   s_cfg;
+static volatile uint8_t s_master_override = 255;
 
 /* Base colour ratios (0.0–1.0) — set from active scene */
 static float s_ratio_w = 1.0f;
@@ -82,7 +83,9 @@ static void flame_task(void *arg)
         float bias_y      = SCALE_BIAS_Y(cfg.bias_y);
         float fl_depth    = SCALE_FLICKER_D(cfg.flicker_depth);
         float fl_speed    = SCALE_FLICKER_S(cfg.flicker_speed);
-        float master      = (float)cfg.brightness;
+        /* Compute pixel values at full range; brightness applied via lamp_set_master
+         * so that gamma correction sees full-range values (avoids dead zone at low brightness) */
+        uint8_t master_out = (uint16_t)cfg.brightness * s_master_override / 255;
 
         /* ── Random walk ── */
         fx += randf_gaussian(0.0f, drift_x) - k_restore * (fx - 2.0f);
@@ -124,7 +127,7 @@ static void flame_task(void *arg)
             float dy = cy - fy;
             float d2 = dx * dx + dy * dy;
 
-            float intensity = master * expf(-d2 / two_sigma_sq) * flicker;
+            float intensity = 255.0f * expf(-d2 / two_sigma_sq) * flicker;
             if (intensity < 0.0f) intensity = 0.0f;
             if (intensity > 255.0f) intensity = 255.0f;
 
@@ -135,7 +138,7 @@ static void flame_task(void *arg)
             lamp_set_pixel(i, w, n, c);
         }
 
-        lamp_set_master(255);   /* master already baked into intensity */
+        lamp_set_master(master_out);   /* brightness applied after gamma */
         lamp_flush();
 
         vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(FLAME_PERIOD_MS));
@@ -152,6 +155,7 @@ esp_err_t flame_mode_start(void)
     if (s_running) return ESP_OK;
 
     lamp_nvs_load_flame_config(&s_cfg);
+    s_master_override = 255;
 
     s_running = true;
     BaseType_t ret = xTaskCreatePinnedToCore(flame_task, "flame", FLAME_TASK_STACK,
@@ -202,4 +206,9 @@ void flame_mode_set_color(uint8_t warm, uint8_t neutral, uint8_t cool)
 bool flame_mode_is_active(void)
 {
     return s_running;
+}
+
+void flame_mode_set_master_override(uint8_t master)
+{
+    s_master_override = master;
 }

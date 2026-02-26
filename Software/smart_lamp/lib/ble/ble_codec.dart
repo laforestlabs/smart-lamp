@@ -27,16 +27,14 @@ class BleCodec {
     return [state.warm, state.neutral, state.cool, state.master];
   }
 
-  // ── Mode ──
+  // ── Mode Flags ──
 
-  static LampMode decodeMode(List<int> bytes) {
-    if (bytes.isEmpty) return LampMode.manual;
-    final val = bytes[0];
-    if (val >= LampMode.values.length) return LampMode.manual;
-    return LampMode.values[val];
+  static ModeFlags decodeModeFlags(List<int> bytes) {
+    if (bytes.isEmpty) return const ModeFlags();
+    return ModeFlags.fromByte(bytes[0]);
   }
 
-  static List<int> encodeMode(LampMode mode) => [mode.index];
+  static List<int> encodeModeFlags(ModeFlags flags) => [flags.toByte()];
 
   // ── Auto Config ──
 

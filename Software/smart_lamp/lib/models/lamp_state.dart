@@ -1,4 +1,33 @@
-enum LampMode { manual, auto, flame }
+class ModeFlags {
+  final bool autoEnabled;
+  final bool flameEnabled;
+
+  const ModeFlags({this.autoEnabled = false, this.flameEnabled = false});
+
+  ModeFlags copyWith({bool? autoEnabled, bool? flameEnabled}) {
+    return ModeFlags(
+      autoEnabled: autoEnabled ?? this.autoEnabled,
+      flameEnabled: flameEnabled ?? this.flameEnabled,
+    );
+  }
+
+  int toByte() => (autoEnabled ? 0x01 : 0) | (flameEnabled ? 0x02 : 0);
+
+  factory ModeFlags.fromByte(int byte) => ModeFlags(
+        autoEnabled: (byte & 0x01) != 0,
+        flameEnabled: (byte & 0x02) != 0,
+      );
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ModeFlags &&
+          autoEnabled == other.autoEnabled &&
+          flameEnabled == other.flameEnabled;
+
+  @override
+  int get hashCode => Object.hash(autoEnabled, flameEnabled);
+}
 
 class LedState {
   final int warm;

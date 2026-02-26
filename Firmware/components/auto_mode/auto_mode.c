@@ -16,16 +16,30 @@ static esp_timer_handle_t s_dim_timer;
 /* Saved scene to restore when entering ON state */
 static scene_t s_active_scene;
 
+/* Transition callback — set by lamp_control */
+static auto_mode_transition_cb_t s_transition_cb = NULL;
+
+void auto_mode_set_transition_cb(auto_mode_transition_cb_t cb)
+{
+    s_transition_cb = cb;
+}
+
 /* ── Timer callbacks ── */
 
 static void timeout_cb(void *arg)
 {
     /* No motion for timeout_s — enter DIMMING */
     if (s_state == AUTO_STATE_ON) {
+        uint8_t dim_master = s_cfg.dim_pct * 255 / 100;
         ESP_LOGI(TAG, "Timeout → DIMMING (dim_pct=%u%%)", s_cfg.dim_pct);
         s_state = AUTO_STATE_DIMMING;
-        lamp_set_master(s_cfg.dim_pct * 255 / 100);
-        lamp_flush();
+
+        if (s_transition_cb) {
+            s_transition_cb(AUTO_TRANSITION_DIMMING, dim_master);
+        } else {
+            lamp_set_master(dim_master);
+            lamp_flush();
+        }
 
         /* Start dim duration timer */
         esp_timer_start_once(s_dim_timer, (uint64_t)s_cfg.dim_duration_s * 1000000);
@@ -38,7 +52,12 @@ static void dim_cb(void *arg)
     if (s_state == AUTO_STATE_DIMMING) {
         ESP_LOGI(TAG, "Dim duration elapsed → IDLE");
         s_state = AUTO_STATE_IDLE;
-        lamp_off();
+
+        if (s_transition_cb) {
+            s_transition_cb(AUTO_TRANSITION_OFF, 0);
+        } else {
+            lamp_off();
+        }
     }
 }
 
@@ -97,11 +116,15 @@ void auto_mode_process_event(const sensor_event_t *evt)
                 ESP_LOGI(TAG, "Motion + dark (lux=%u) → ON", s_current_lux);
                 s_state = AUTO_STATE_ON;
 
-                /* Apply active scene at full brightness */
                 lamp_nvs_load_active_scene(&s_active_scene);
-                lamp_fill(s_active_scene.warm, s_active_scene.neutral, s_active_scene.cool);
-                lamp_set_master(s_active_scene.master);
-                lamp_flush();
+
+                if (s_transition_cb) {
+                    s_transition_cb(AUTO_TRANSITION_ON, 0);
+                } else {
+                    lamp_fill(s_active_scene.warm, s_active_scene.neutral, s_active_scene.cool);
+                    lamp_set_master(s_active_scene.master);
+                    lamp_flush();
+                }
 
                 /* Start inactivity timeout */
                 esp_timer_start_once(s_timeout_timer,
@@ -112,8 +135,13 @@ void auto_mode_process_event(const sensor_event_t *evt)
             ESP_LOGI(TAG, "Motion during DIMMING → ON");
             esp_timer_stop(s_dim_timer);
             s_state = AUTO_STATE_ON;
-            lamp_set_master(s_active_scene.master);
-            lamp_flush();
+
+            if (s_transition_cb) {
+                s_transition_cb(AUTO_TRANSITION_ON, 0);
+            } else {
+                lamp_set_master(s_active_scene.master);
+                lamp_flush();
+            }
 
             esp_timer_start_once(s_timeout_timer,
                                  (uint64_t)s_cfg.timeout_s * 1000000);

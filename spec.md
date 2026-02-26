@@ -183,7 +183,9 @@ Recommended ESP-IDF version: **v5.x** (latest stable).
   /* Commit frame buffer to RMT and send */
   void lamp_flush(void);
   ```
-- Gamma correction LUT (2.2) applied per-channel at `lamp_flush()` time.
+- Gamma correction LUT (2.2) applied per-channel at `lamp_flush()` time. Gamma is
+  applied **before** master brightness scaling so that low master values don't crush
+  dim pixels into the gamma dead zone (i.e., `out = gamma(channel) × master / 255`).
 - A `led_coord` lookup table (index → col, row) is compiled into firmware from the
   layout defined in §2.5 for use by spatial effect algorithms.
 
@@ -216,10 +218,21 @@ Recommended ESP-IDF version: **v5.x** (latest stable).
 
 See §7 for the full state machine.
 
-Auto mode is active when the user has enabled it (stored in NVS). In auto mode:
-- Motion events and periodic lux readings drive the state machine.
-- Manual brightness/colour changes from the app override the current scene without
-  disabling auto mode.
+Auto mode and flame mode are **independent boolean toggles** (stored in NVS as a
+bitmask). Either or both can be enabled simultaneously:
+
+- **Auto only:** motion events and lux readings drive the state machine; lamp shows
+  the active scene with static white LEDs.
+- **Flame only:** animated candle-flame effect runs continuously at the configured
+  brightness.
+- **Both enabled:** auto mode controls motion-based on/off timing, flame mode provides
+  the animated visual output. On motion → flame starts; on dim → flame master reduced;
+  on idle timeout → flame stops and LEDs turn off.
+- **Neither (manual):** user controls brightness and colour directly from the app.
+
+Manual brightness/colour changes from the app override the current scene without
+disabling auto or flame mode. The on/off button is always available and can override
+auto mode.
 
 ### 3.5 BLE GATT Server
 
@@ -234,7 +247,7 @@ Auto mode is active when the user has enabled it (stored in NVS). In auto mode:
 
 Stored across power cycles:
 - Active scene (channel values + master brightness)
-- Mode (manual / auto)
+- Mode flags (bitmask: bit 0 = auto enabled, bit 1 = flame enabled)
 - Auto mode config (timeout, lux threshold, dim level, dim duration)
 - Up to 16 named scenes
 - Up to 16 schedules
@@ -351,10 +364,20 @@ See §6 for full detail. Summary:
 - Real-time preview: changes write immediately to the LED State characteristic.
 - "Save as scene" button.
 
-### 4.3 Auto Mode
+### 4.3 Mode Toggles
 
-- Toggle to enable / disable auto mode.
-- Settings panel (visible when enabled):
+The main control screen provides two independent toggle switches:
+
+- **Auto Mode** — motion-activated on/off with configurable timeout and dimming.
+- **Flame Effect** — animated candle-flame simulation.
+
+Both can be enabled simultaneously (see §3.4). All manual controls (on/off button,
+colour sliders, brightness slider, save-as-scene) remain visible regardless of which
+toggles are active.
+
+### 4.3.1 Auto Mode Settings
+
+- Settings panel (accessible via a card when auto is enabled):
   - **Lux threshold** — don't activate if room is brighter than this (default: 50 lux)
   - **Timeout** — seconds of no motion before dimming begins (default: 300 s)
   - **Dim level** — brightness during the dim-warning phase (default: 30 %)
@@ -381,7 +404,7 @@ See §6 for full detail. Summary:
 
 ### 4.6 Flame Mode
 
-- Selectable from the main mode picker alongside Manual and Auto.
+- Enabled via the Flame Effect toggle on the control screen (see §4.3).
 - When active, the app shows a **flame visualiser**: a live 7×5 grid preview (with the
   corner cells greyed out) that mirrors the current hot-spot position and Gaussian falloff
   in real-time using Notify on the LED State characteristic.
@@ -415,7 +438,7 @@ See §6 for full detail. Summary:
 | Name | UUID (suffix) | Properties | Payload format |
 |---|---|---|---|
 | **LED State** | `...0001` | Read, Write, Notify | `[warm: u8, neutral: u8, cool: u8, master: u8]` |
-| **Mode** | `...0002` | Read, Write | `[mode: u8]` — `0`=manual, `1`=auto, `2`=flame |
+| **Mode** | `...0002` | Read, Write | `[flags: u8]` — bitmask: bit 0 (`0x01`) = auto enabled, bit 1 (`0x02`) = flame enabled. `0x00`=manual, `0x01`=auto, `0x02`=flame, `0x03`=both |
 | **Auto Config** | `...0003` | Read, Write | `[timeout_s: u16 LE, lux_threshold: u16 LE, dim_pct: u8, dim_duration_s: u16 LE]` |
 | **Scene Write** | `...0004` | Write | `[index: u8, name_len: u8, name: utf8[name_len], warm: u8, neutral: u8, cool: u8, master: u8]` |
 | **Scene List** | `...0005` | Read, Notify | Length-prefixed list of scenes; same struct as Scene Write |
@@ -531,7 +554,7 @@ disconnect it before booting with BLE.
 - **Do not** modify `esp_phy/src/phy_init.c` to change the fallback calibration mode —
   the default (`PHY_RF_CAL_FULL` when no stored data exists) is correct.
 
-### 8.3 Board Status (as of 2026-02-24)
+### 8.3 Board Status (as of 2026-02-25)
 
 | Board | MAC (BT) | Device Name | Status |
 |---|---|---|---|
@@ -540,7 +563,7 @@ disconnect it before booting with BLE.
 | SmartLamp-6B68 | 30:ae:a4:07:6b:68 | SmartLamp-6B68 | Flashed, functional |
 
 **Verified working:** BLE advertising, BLE connection + bonding, MTU 512 negotiation,
-GATT read/write/notify, PIR motion detection, mode switching (manual/auto/flame).
+GATT read/write/notify, PIR motion detection, mode flags (auto/flame independent toggles).
 
 **Not yet verified (pending PCB fixes):** LED output, ambient light sensor ADC reading.
 

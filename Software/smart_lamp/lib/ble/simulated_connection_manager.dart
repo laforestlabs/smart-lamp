@@ -30,7 +30,7 @@ class SimulatedBleConnectionManager implements BleConnectionManager {
   @override
   LedState? initialLedState;
   @override
-  LampMode? initialMode;
+  ModeFlags? initialModeFlags;
   @override
   AutoConfig? initialAutoConfig;
   @override
@@ -70,7 +70,7 @@ class SimulatedBleConnectionManager implements BleConnectionManager {
 
     initialLedState =
         const LedState(warm: 200, neutral: 100, cool: 50, master: 255);
-    initialMode = LampMode.manual;
+    initialModeFlags = const ModeFlags();
     initialAutoConfig = const AutoConfig();
     initialFlameConfig = const FlameConfig();
     initialScenes = [
