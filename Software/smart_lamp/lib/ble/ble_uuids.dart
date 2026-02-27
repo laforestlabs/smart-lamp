@@ -16,6 +16,7 @@ class BleUuids {
   static final sensorData = Uuid.parse('F000AA08-$_base');
   static final otaControl = Uuid.parse('F000AA09-$_base');
   static final otaData = Uuid.parse('F000AA0A-$_base');
+  static final pirSensitivity = Uuid.parse('F000AA0B-$_base');
   static final flameConfig = Uuid.parse('F000AA0C-$_base');
   static final deviceInfo = Uuid.parse('F000AA0D-$_base');
 

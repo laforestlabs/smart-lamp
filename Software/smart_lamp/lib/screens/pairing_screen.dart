@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:android_intent_plus/android_intent.dart';
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -22,12 +23,22 @@ class PairingScreen extends ConsumerStatefulWidget {
 class _PairingScreenState extends ConsumerState<PairingScreen> {
   final _discovered = <DiscoveredDevice>[];
   StreamSubscription? _scanSub;
+  StreamSubscription? _statusSub;
   bool _scanning = false;
   bool _connecting = false;
+  BleStatus _bleStatus = BleStatus.unknown;
 
   @override
   void initState() {
     super.initState();
+    final ble = ref.read(flutterReactiveBleProvider);
+    _bleStatus = ble.status;
+    _statusSub = ble.statusStream.listen((status) {
+      if (mounted) setState(() => _bleStatus = status);
+      if (status == BleStatus.ready && !_scanning && !_connecting) {
+        _requestPermissionsAndScan();
+      }
+    });
     _requestPermissionsAndScan();
   }
 
@@ -50,6 +61,7 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
   }
 
   void _startScan() {
+    if (_bleStatus != BleStatus.ready) return;
     setState(() {
       _discovered.clear();
       _scanning = true;
@@ -117,6 +129,7 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
   @override
   void dispose() {
     _scanSub?.cancel();
+    _statusSub?.cancel();
     super.dispose();
   }
 
@@ -126,6 +139,29 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
       appBar: AppBar(title: const Text('Add Lamp')),
       body: Column(
         children: [
+          if (_bleStatus != BleStatus.ready)
+            MaterialBanner(
+              content: Text(
+                _bleStatus == BleStatus.poweredOff
+                    ? 'Bluetooth is turned off. Please enable Bluetooth to scan for lamps.'
+                    : 'Bluetooth is not available.',
+              ),
+              leading: const Icon(Icons.bluetooth_disabled, color: Colors.red),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    if (Platform.isAndroid) {
+                      const AndroidIntent(
+                        action: 'android.settings.BLUETOOTH_SETTINGS',
+                      ).launch();
+                    } else {
+                      openAppSettings();
+                    }
+                  },
+                  child: const Text('OPEN SETTINGS'),
+                ),
+              ],
+            ),
           Padding(
             padding: const EdgeInsets.all(16),
             child: Card(

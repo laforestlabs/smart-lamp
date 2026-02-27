@@ -143,6 +143,7 @@ class ControlScreen extends ConsumerWidget {
                   final index = scenes.isEmpty
                       ? 0
                       : scenes.map((s) => s.index).reduce((a, b) => a > b ? a : b) + 1;
+                  final currentFlags = ref.read(modeFlagsProvider);
                   ref.read(sceneListProvider.notifier).saveScene(
                         Scene(
                           index: index,
@@ -151,6 +152,7 @@ class ControlScreen extends ConsumerWidget {
                           neutral: ledState.neutral,
                           cool: ledState.cool,
                           master: ledState.master,
+                          modeFlags: currentFlags.toByte(),
                         ),
                       );
                 }

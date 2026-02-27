@@ -32,6 +32,7 @@ class BleConnectionManager {
   FlameConfig? initialFlameConfig;
   List<Scene>? initialScenes;
   List<Schedule>? initialSchedules;
+  int? initialPirSensitivity;
   String? firmwareVersion;
 
   // Notification streams
@@ -110,6 +111,10 @@ class BleConnectionManager {
       final schedBytes =
           await _bleService.readCharacteristic(deviceId, BleUuids.scheduleList);
       initialSchedules = BleCodec.decodeScheduleList(schedBytes);
+
+      final pirSensBytes =
+          await _bleService.readCharacteristic(deviceId, BleUuids.pirSensitivity);
+      initialPirSensitivity = BleCodec.decodePirSensitivity(pirSensBytes);
 
       final infoBytes =
           await _bleService.readCharacteristic(deviceId, BleUuids.deviceInfo);

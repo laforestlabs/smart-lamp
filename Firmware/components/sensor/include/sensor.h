@@ -16,6 +16,10 @@ extern "C" {
 #define TOUCH_OUT_GPIO      16
 #define LIGHT_ADC_GPIO      17
 
+/* PIR sensitivity: 0 = least sensitive, 31 = most sensitive */
+#define PIR_SENS_MAX        31
+#define PIR_SENS_DEFAULT    24
+
 typedef enum {
     SENSOR_EVT_MOTION_START,
     SENSOR_EVT_MOTION_END,
@@ -45,6 +49,17 @@ uint8_t sensor_get_lux(void);
  * Get the current motion state (true = motion detected).
  */
 bool sensor_get_motion(void);
+
+/**
+ * Set PIR motion sensor sensitivity (0–31).
+ * 0 = least sensitive (shortest range), 31 = most sensitive (longest range).
+ */
+esp_err_t sensor_set_pir_sensitivity(uint8_t level);
+
+/**
+ * Get the current PIR sensitivity level (0–31).
+ */
+uint8_t sensor_get_pir_sensitivity(void);
 
 #ifdef __cplusplus
 }

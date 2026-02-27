@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "lamp_nvs.h"
+#include "sensor.h"
 #include "nvs_flash.h"
 #include "nvs.h"
 #include "esp_log.h"
@@ -62,6 +63,7 @@ esp_err_t lamp_nvs_save_active_scene(const scene_t *scene)
 
 esp_err_t lamp_nvs_load_active_scene(scene_t *scene)
 {
+    memset(scene, 0, sizeof(*scene));
     xSemaphoreTake(s_mutex, portMAX_DELAY);
     nvs_handle_t h = open_nvs();
     size_t len = sizeof(scene_t);
@@ -162,6 +164,7 @@ esp_err_t lamp_nvs_load_scene(uint8_t index, scene_t *scene)
     char key[16];
     make_key(key, "scene", index);
 
+    memset(scene, 0, sizeof(*scene));
     xSemaphoreTake(s_mutex, portMAX_DELAY);
     nvs_handle_t h = open_nvs();
     size_t len = sizeof(scene_t);
@@ -270,6 +273,33 @@ esp_err_t lamp_nvs_save_flame_config(const flame_config_t *cfg)
     return ret;
 }
 
+/* ── PIR sensitivity ── */
+
+esp_err_t lamp_nvs_save_pir_sensitivity(uint8_t level)
+{
+    xSemaphoreTake(s_mutex, portMAX_DELAY);
+    nvs_handle_t h = open_nvs();
+    esp_err_t ret = nvs_set_u8(h, "pir_sens", level);
+    close_nvs(h);
+    xSemaphoreGive(s_mutex);
+    return ret;
+}
+
+esp_err_t lamp_nvs_load_pir_sensitivity(uint8_t *level)
+{
+    xSemaphoreTake(s_mutex, portMAX_DELAY);
+    nvs_handle_t h = open_nvs();
+    esp_err_t ret = nvs_get_u8(h, "pir_sens", level);
+    nvs_close(h);
+    xSemaphoreGive(s_mutex);
+
+    if (ret == ESP_ERR_NVS_NOT_FOUND) {
+        *level = PIR_SENS_DEFAULT;
+        return ESP_OK;
+    }
+    return ret;
+}
+
 esp_err_t lamp_nvs_load_flame_config(flame_config_t *cfg)
 {
     xSemaphoreTake(s_mutex, portMAX_DELAY);
@@ -280,15 +310,15 @@ esp_err_t lamp_nvs_load_flame_config(flame_config_t *cfg)
     xSemaphoreGive(s_mutex);
 
     if (ret == ESP_ERR_NVS_NOT_FOUND) {
-        /* Defaults from spec §3.7 — scaled 0–255 */
-        cfg->drift_x       = 64;    /* 0.25 * 255 */
-        cfg->drift_y        = 51;    /* 0.20 * 255 */
+        /* Defaults: 100% intensity, 50% calm, 50% diffuse, 5% flicker, 5% fast */
+        cfg->drift_x       = 128;   /* 50% */
+        cfg->drift_y        = 102;   /* 80% of drift_x */
         cfg->restore        = 20;    /* 0.08 * 255 */
-        cfg->radius         = 91;    /* 1.4 / 4.0 * 255 ≈ 89 (scaled to max radius ~4) */
-        cfg->bias_y         = 128;   /* 3.0 / 6.0 * 255 ≈ 128 — grid centre */
-        cfg->flicker_depth  = 38;    /* 0.15 * 255 */
-        cfg->flicker_speed  = 128;   /* mid-range */
-        cfg->brightness     = 200;
+        cfg->radius         = 128;   /* 50% */
+        cfg->bias_y         = 128;   /* grid centre */
+        cfg->flicker_depth  = 13;    /* 5% */
+        cfg->flicker_speed  = 13;    /* 5% */
+        cfg->brightness     = 255;   /* 100% */
         return ESP_OK;
     }
     return ret;

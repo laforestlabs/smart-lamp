@@ -40,6 +40,8 @@ class SimulatedBleConnectionManager implements BleConnectionManager {
   @override
   List<Schedule>? initialSchedules;
   @override
+  int? initialPirSensitivity;
+  @override
   String? firmwareVersion;
 
   SimulatedBleConnectionManager(this._bleService);
@@ -90,6 +92,7 @@ class SimulatedBleConnectionManager implements BleConnectionManager {
           master: 140),
     ];
     initialSchedules = [];
+    initialPirSensitivity = 24;
     firmwareVersion = 'SIM 1.0.0';
 
     _connectionStateCtrl.add(LampConnectionState.connected);

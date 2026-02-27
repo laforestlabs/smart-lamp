@@ -9,14 +9,14 @@ class FlameConfig {
   final int brightness;
 
   const FlameConfig({
-    this.driftX = 64,
-    this.driftY = 51,
+    this.driftX = 128,
+    this.driftY = 102,
     this.restore = 20,
-    this.radius = 91,
+    this.radius = 128,
     this.biasY = 128,
-    this.flickerDepth = 38,
-    this.flickerSpeed = 128,
-    this.brightness = 200,
+    this.flickerDepth = 13,
+    this.flickerSpeed = 13,
+    this.brightness = 255,
   });
 
   FlameConfig copyWith({

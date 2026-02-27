@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../models/lamp_state.dart';
 import '../models/scene.dart';
 
 class SceneCard extends StatelessWidget {
@@ -42,7 +43,19 @@ class SceneCard extends StatelessWidget {
           ),
         ),
         title: Text(scene.name),
-        subtitle: Text('${(scene.master / 2.55).round()}% brightness'),
+        subtitle: Row(
+          children: [
+            Text('${(scene.master / 2.55).round()}% brightness'),
+            if (ModeFlags.fromByte(scene.modeFlags).flameEnabled) ...[
+              const SizedBox(width: 6),
+              Icon(Icons.local_fire_department, size: 14, color: Colors.orange.shade400),
+            ],
+            if (ModeFlags.fromByte(scene.modeFlags).autoEnabled) ...[
+              const SizedBox(width: 4),
+              Icon(Icons.sensors, size: 14, color: Colors.blue.shade300),
+            ],
+          ],
+        ),
         trailing: const Icon(Icons.play_arrow),
         onTap: onApply,
       ),

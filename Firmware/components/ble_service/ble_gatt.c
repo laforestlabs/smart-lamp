@@ -26,6 +26,7 @@ uint16_t g_schedule_list_handle;
 uint16_t g_sensor_data_handle;
 uint16_t g_ota_control_handle;
 uint16_t g_ota_data_handle;
+uint16_t g_pir_sens_handle;
 uint16_t g_flame_config_handle;
 uint16_t g_device_info_handle;
 
@@ -158,6 +159,11 @@ static int scene_write_access(uint16_t conn_handle, uint16_t attr_handle,
     scene.cool    = buf[2 + name_len + 2];
     scene.master  = buf[2 + name_len + 3];
 
+    /* Optional mode_flags byte (backward compat: default 0 if absent) */
+    if (copy_len >= 2 + name_len + 5) {
+        scene.mode_flags = buf[2 + name_len + 4] & MODE_FLAGS_MASK;
+    }
+
     lamp_nvs_save_scene(index, &scene);
     ble_notify_scene_list();
 
@@ -188,6 +194,7 @@ static int scene_list_access(uint16_t conn_handle, uint16_t attr_handle,
         os_mbuf_append(ctxt->om, &scene.neutral, 1);
         os_mbuf_append(ctxt->om, &scene.cool, 1);
         os_mbuf_append(ctxt->om, &scene.master, 1);
+        os_mbuf_append(ctxt->om, &scene.mode_flags, 1);
     }
     return 0;
 }
@@ -313,6 +320,28 @@ static int ota_data_access(uint16_t conn_handle, uint16_t attr_handle,
     return 0;
 }
 
+/* ── PIR Sensitivity (000B): R/W — [level: u8, 0–31] ── */
+
+static int pir_sens_access(uint16_t conn_handle, uint16_t attr_handle,
+                           struct ble_gatt_access_ctxt *ctxt, void *arg)
+{
+    if (ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR) {
+        uint8_t level = sensor_get_pir_sensitivity();
+        os_mbuf_append(ctxt->om, &level, 1);
+        return 0;
+    }
+
+    if (ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR) {
+        uint8_t level;
+        os_mbuf_copydata(ctxt->om, 0, 1, &level);
+        if (level > PIR_SENS_MAX) level = PIR_SENS_MAX;
+        sensor_set_pir_sensitivity(level);
+        lamp_nvs_save_pir_sensitivity(level);
+        return 0;
+    }
+    return BLE_ATT_ERR_UNLIKELY;
+}
+
 /* ── Flame Config (000C): R/W ── */
 
 static int flame_config_access(uint16_t conn_handle, uint16_t attr_handle,
@@ -362,6 +391,7 @@ static const ble_uuid128_t chr_schedule_list_uuid    = CHR_UUID(0xAA, 0x07);
 static const ble_uuid128_t chr_sensor_data_uuid      = CHR_UUID(0xAA, 0x08);
 static const ble_uuid128_t chr_ota_control_uuid      = CHR_UUID(0xAA, 0x09);
 static const ble_uuid128_t chr_ota_data_uuid         = CHR_UUID(0xAA, 0x0A);
+static const ble_uuid128_t chr_pir_sens_uuid         = CHR_UUID(0xAA, 0x0B);
 static const ble_uuid128_t chr_flame_config_uuid     = CHR_UUID(0xAA, 0x0C);
 static const ble_uuid128_t chr_device_info_uuid      = CHR_UUID(0xAA, 0x0D);
 
@@ -429,6 +459,12 @@ static const struct ble_gatt_svc_def s_gatt_svcs[] = {
                 .access_cb  = ota_data_access,
                 .val_handle = &g_ota_data_handle,
                 .flags      = BLE_GATT_CHR_F_WRITE_NO_RSP,
+            },
+            { /* PIR Sensitivity (000B) */
+                .uuid       = &chr_pir_sens_uuid.u,
+                .access_cb  = pir_sens_access,
+                .val_handle = &g_pir_sens_handle,
+                .flags      = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_WRITE,
             },
             { /* Flame Config (000C) */
                 .uuid       = &chr_flame_config_uuid.u,

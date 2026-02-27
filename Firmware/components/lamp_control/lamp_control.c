@@ -127,6 +127,9 @@ void lamp_control_apply_scene(const scene_t *scene)
     s_active_scene = *scene;
     lamp_nvs_save_active_scene(scene);
 
+    /* Restore mode flags stored with the scene */
+    lamp_control_set_flags(scene->mode_flags);
+
     if (s_flags & MODE_FLAG_FLAME) {
         flame_mode_set_color(scene->warm, scene->neutral, scene->cool);
     }
@@ -198,6 +201,11 @@ esp_err_t lamp_control_init(QueueHandle_t sensor_queue)
     lamp_nvs_load_active_scene(&s_active_scene);
     lamp_nvs_load_mode(&s_flags);
     s_flags &= MODE_FLAGS_MASK;
+
+    /* Load and apply PIR sensitivity */
+    uint8_t pir_sens;
+    lamp_nvs_load_pir_sensitivity(&pir_sens);
+    sensor_set_pir_sensitivity(pir_sens);
 
     /* Initialise sub-modules */
     auto_mode_init();

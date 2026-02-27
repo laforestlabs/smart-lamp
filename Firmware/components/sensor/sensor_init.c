@@ -32,3 +32,13 @@ bool sensor_get_motion(void)
 {
     return sensor_pir_get_motion();
 }
+
+esp_err_t sensor_set_pir_sensitivity(uint8_t level)
+{
+    return sensor_pir_set_sensitivity(level);
+}
+
+uint8_t sensor_get_pir_sensitivity(void)
+{
+    return sensor_pir_get_sensitivity();
+}

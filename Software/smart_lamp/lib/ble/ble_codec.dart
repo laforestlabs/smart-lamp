@@ -71,6 +71,7 @@ class BleCodec {
       scene.neutral,
       scene.cool,
       scene.master,
+      scene.modeFlags,
     ];
   }
 
@@ -88,13 +89,19 @@ class BleCodec {
       if (offset + nameLen + 4 > bytes.length) break;
       final name = utf8.decode(bytes.sublist(offset, offset + nameLen));
       offset += nameLen;
+      final warm = bytes[offset++];
+      final neutral = bytes[offset++];
+      final cool = bytes[offset++];
+      final master = bytes[offset++];
+      final modeFlags = (offset < bytes.length) ? bytes[offset++] : 0;
       scenes.add(Scene(
         index: index,
         name: name,
-        warm: bytes[offset++],
-        neutral: bytes[offset++],
-        cool: bytes[offset++],
-        master: bytes[offset++],
+        warm: warm,
+        neutral: neutral,
+        cool: cool,
+        master: master,
+        modeFlags: modeFlags,
       ));
     }
     return scenes;
@@ -144,6 +151,15 @@ class BleCodec {
       motion: bytes[2] != 0,
     );
   }
+
+  // ── PIR Sensitivity ──
+
+  static int decodePirSensitivity(List<int> bytes) {
+    if (bytes.isEmpty) return 24; // default
+    return bytes[0].clamp(0, 31);
+  }
+
+  static List<int> encodePirSensitivity(int level) => [level.clamp(0, 31)];
 
   // ── Flame Config ──
 

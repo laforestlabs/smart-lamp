@@ -194,8 +194,11 @@ Recommended ESP-IDF version: **v5.x** (latest stable).
 **PIR sensor (BM612)**
 - IO27 (`PIR_signal`) configured as GPIO input; interrupt on rising edge (motion start)
   and falling edge (motion end).
-- IO25 (`PIR_sens`) driven as GPIO output to control the sensitivity resistor network.
-  Initial value: logic high (maximum sensitivity); can be adjusted in firmware or NVS.
+- IO25 (`PIR_sens`) driven as **DAC output** (DAC_CHAN_0) to control sensitivity.
+  BM612 SENS pin: 0V = max sensitive, VDD/2 = least sensitive, 32 discrete levels.
+  DAC value = `(31 - level) * 4` where level 0–31 is the BLE/NVS setting (default: 24).
+  Sensitivity is adjustable via the PIR Sensitivity BLE characteristic (0x000B) and
+  persisted in NVS.
 - Interrupt handler posts to a FreeRTOS event queue; a sensor task consumes events and
   drives the auto-mode state machine.
 
@@ -249,8 +252,10 @@ Stored across power cycles:
 - Active scene (channel values + master brightness)
 - Mode flags (bitmask: bit 0 = auto enabled, bit 1 = flame enabled)
 - Auto mode config (timeout, lux threshold, dim level, dim duration)
-- Up to 16 named scenes
+- Up to 16 named scenes (each includes colour channels + mode flags)
 - Up to 16 schedules
+- PIR sensitivity level (0–31, default 24)
+- Flame config (8 parameters)
 - BLE bond keys (managed automatically by NimBLE)
 
 ### 3.7 Flame Mode
@@ -378,6 +383,7 @@ toggles are active.
 ### 4.3.1 Auto Mode Settings
 
 - Settings panel (accessible via a card when auto is enabled):
+  - **Motion sensitivity** — PIR detection range, 0 (closest) to 31 (farthest), default 24
   - **Lux threshold** — don't activate if room is brighter than this (default: 50 lux)
   - **Timeout** — seconds of no motion before dimming begins (default: 300 s)
   - **Dim level** — brightness during the dim-warning phase (default: 30 %)
@@ -386,8 +392,11 @@ toggles are active.
 ### 4.4 Scenes & Presets
 
 - List of named scenes stored both on the lamp (NVS) and cached locally in the app.
-- Create: set channels manually → tap Save → enter name.
-- Apply: tap scene card → writes to lamp via LED State + Scene characteristics.
+- Create: set channels manually → tap Save → enter name. Current mode flags
+  (auto/flame) are saved with the scene.
+- Apply: tap scene card → writes to lamp via LED State + Mode characteristics.
+  Mode flags (auto/flame) are restored from the scene. Scene cards show small
+  flame/auto icons when those modes are stored.
 - Delete: swipe to delete; syncs deletion to lamp.
 
 ### 4.5 Schedules & Timers
@@ -440,13 +449,14 @@ toggles are active.
 | **LED State** | `...0001` | Read, Write, Notify | `[warm: u8, neutral: u8, cool: u8, master: u8]` |
 | **Mode** | `...0002` | Read, Write | `[flags: u8]` — bitmask: bit 0 (`0x01`) = auto enabled, bit 1 (`0x02`) = flame enabled. `0x00`=manual, `0x01`=auto, `0x02`=flame, `0x03`=both |
 | **Auto Config** | `...0003` | Read, Write | `[timeout_s: u16 LE, lux_threshold: u16 LE, dim_pct: u8, dim_duration_s: u16 LE]` |
-| **Scene Write** | `...0004` | Write | `[index: u8, name_len: u8, name: utf8[name_len], warm: u8, neutral: u8, cool: u8, master: u8]` |
-| **Scene List** | `...0005` | Read, Notify | Length-prefixed list of scenes; same struct as Scene Write |
+| **Scene Write** | `...0004` | Write | `[index: u8, name_len: u8, name: utf8[name_len], warm: u8, neutral: u8, cool: u8, master: u8, mode_flags: u8]` — mode_flags optional (default 0) |
+| **Scene List** | `...0005` | Read, Notify | Length-prefixed list of scenes; same struct as Scene Write (includes mode_flags) |
 | **Schedule Write** | `...0006` | Write | `[index: u8, day_mask: u8, hour: u8, minute: u8, scene_index: u8, enabled: u8]` |
 | **Schedule List** | `...0007` | Read, Notify | Length-prefixed list of schedules |
 | **Sensor Data** | `...0008` | Read, Notify | `[lux: u16 LE, motion: u8]` — notified every 1 s (lux update) and on motion start/end |
 | **OTA Control** | `...0009` | Write, Notify | `[cmd: u8, ...]` — `0x01`=start, `0x02`=end, `0xFF`=abort; notify returns status |
 | **OTA Data** | `...000A` | Write Without Response | Raw firmware bytes (up to MTU−3 per write) |
+| **PIR Sensitivity** | `...000B` | Read, Write | `[level: u8]` — 0 (closest) to 31 (farthest); DAC output on IO25 controls BM612 SENS pin |
 | **Flame Config** | `...000C` | Read, Write | `[drift_x: u8, drift_y: u8, restore: u8, radius: u8, bias_y: u8, flicker_depth: u8, flicker_speed: u8, brightness: u8]` — all scaled 0–255 |
 | **Device Info** | `...000D` | Read | `[fw_version: utf8]` |
 

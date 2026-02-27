@@ -17,7 +17,7 @@
 
 static const char *TAG = "ble_svc";
 
-#define ADV_TIMEOUT_MS  60000   /* 60 s advertising timeout */
+#define ADV_TIMEOUT_MS  180000  /* 3 min advertising timeout */
 
 static uint16_t s_conn_handle;
 static bool     s_connected = false;

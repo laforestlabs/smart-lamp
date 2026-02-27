@@ -18,6 +18,7 @@ typedef struct {
     uint8_t neutral;
     uint8_t cool;
     uint8_t master;
+    uint8_t mode_flags;
 } scene_t;
 
 typedef struct {
@@ -77,6 +78,10 @@ esp_err_t lamp_nvs_save_schedule(uint8_t index, const schedule_t *sched);
 esp_err_t lamp_nvs_load_schedule(uint8_t index, schedule_t *sched);
 esp_err_t lamp_nvs_delete_schedule(uint8_t index);
 uint8_t   lamp_nvs_get_schedule_count(void);
+
+/* ── PIR sensitivity ── */
+esp_err_t lamp_nvs_save_pir_sensitivity(uint8_t level);
+esp_err_t lamp_nvs_load_pir_sensitivity(uint8_t *level);
 
 /* ── Flame config ── */
 esp_err_t lamp_nvs_save_flame_config(const flame_config_t *cfg);

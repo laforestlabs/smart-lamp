@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/auto_config_provider.dart';
+import '../providers/pir_sensitivity_provider.dart';
 import '../providers/sensor_data_provider.dart';
 
 class AutoSettingsScreen extends ConsumerWidget {
@@ -10,6 +11,7 @@ class AutoSettingsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final config = ref.watch(autoConfigProvider);
+    final pirSensitivity = ref.watch(pirSensitivityProvider);
     final sensorData = ref.watch(sensorDataProvider);
 
     return Scaffold(
@@ -51,6 +53,22 @@ class AutoSettingsScreen extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 24),
+
+          // Motion sensitivity
+          Text('Motion Sensitivity: $pirSensitivity/31',
+              style: Theme.of(context).textTheme.titleSmall),
+          Slider(
+            value: pirSensitivity.toDouble(),
+            min: 0,
+            max: 31,
+            divisions: 31,
+            label: '$pirSensitivity',
+            onChanged: (v) =>
+                ref.read(pirSensitivityProvider.notifier).setSensitivity(v.round()),
+          ),
+          const Text('Detection range \u2014 0 (closest) to 31 (farthest)',
+              style: TextStyle(fontSize: 12, color: Colors.grey)),
+          const SizedBox(height: 16),
 
           // Lux threshold
           Text('Lux Threshold: ${config.luxThreshold}',
