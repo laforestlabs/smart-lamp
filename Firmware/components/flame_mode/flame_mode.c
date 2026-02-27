@@ -34,10 +34,10 @@ static volatile bool    s_running;
 static flame_config_t   s_cfg;
 static volatile uint8_t s_master_override = 255;
 
-/* Base colour ratios (0.0–1.0) — set from active scene */
-static float s_ratio_w = 1.0f;
-static float s_ratio_n = 0.0f;
-static float s_ratio_c = 0.0f;
+/* Base colour values (0–255) — set from active scene */
+static volatile uint8_t s_color_w = 255;
+static volatile uint8_t s_color_n = 0;
+static volatile uint8_t s_color_c = 0;
 
 /* ── Gaussian random (Box-Muller) ── */
 
@@ -69,6 +69,8 @@ static void flame_task(void *arg)
     float flicker_phase_target = randf_uniform() * 2.0f * M_PI;
     int   flicker_phase_counter = 0;
     int   flicker_phase_interval = FLAME_FPS;   /* re-randomise every ~1s */
+
+    int   diag_counter = 0;  /* diagnostic logging counter */
 
     TickType_t last_wake = xTaskGetTickCount();
 
@@ -115,10 +117,10 @@ static void flame_task(void *arg)
         /* ── Per-LED intensity ── */
         float two_sigma_sq = 2.0f * sigma_flame * sigma_flame;
 
-        /* Snapshot colour ratios (may be updated from another task) */
-        float rw = s_ratio_w;
-        float rn = s_ratio_n;
-        float rc = s_ratio_c;
+        /* Snapshot colour values (may be updated from another task) */
+        uint8_t cw = s_color_w;
+        uint8_t cn = s_color_n;
+        uint8_t cc = s_color_c;
 
         for (int i = 0; i < LED_COUNT; i++) {
             float cx = (float)led_coords[i].col;
@@ -127,19 +129,27 @@ static void flame_task(void *arg)
             float dy = cy - fy;
             float d2 = dx * dx + dy * dy;
 
-            float intensity = 255.0f * expf(-d2 / two_sigma_sq) * flicker;
-            if (intensity < 0.0f) intensity = 0.0f;
-            if (intensity > 255.0f) intensity = 255.0f;
+            /* scale is 0.0–1.0: spatial Gaussian × temporal flicker */
+            float scale = expf(-d2 / two_sigma_sq) * flicker;
+            if (scale < 0.0f) scale = 0.0f;
+            if (scale > 1.0f) scale = 1.0f;
 
-            uint8_t w = (uint8_t)(intensity * rw);
-            uint8_t n = (uint8_t)(intensity * rn);
-            uint8_t c = (uint8_t)(intensity * rc);
+            uint8_t w = (uint8_t)((float)cw * scale);
+            uint8_t n = (uint8_t)((float)cn * scale);
+            uint8_t c = (uint8_t)((float)cc * scale);
 
             lamp_set_pixel(i, w, n, c);
         }
 
         lamp_set_master(master_out);   /* brightness applied after gamma */
         lamp_flush();
+
+        /* Periodic diagnostic dump every 5 seconds */
+        if (++diag_counter >= FLAME_FPS * 5) {
+            diag_counter = 0;
+            ESP_LOGI(TAG, "DIAG: color=[%d,%d,%d] master=%d pos=(%.1f,%.1f)",
+                     cw, cn, cc, master_out, fx, fy);
+        }
 
         vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(FLAME_PERIOD_MS));
     }
@@ -156,6 +166,9 @@ esp_err_t flame_mode_start(void)
 
     lamp_nvs_load_flame_config(&s_cfg);
     s_master_override = 255;
+
+    ESP_LOGI(TAG, "Starting flame: color=[%d,%d,%d] override=%d br=%d",
+             s_color_w, s_color_n, s_color_c, s_master_override, s_cfg.brightness);
 
     s_running = true;
     BaseType_t ret = xTaskCreatePinnedToCore(flame_task, "flame", FLAME_TASK_STACK,
@@ -179,6 +192,9 @@ void flame_mode_stop(void)
 
 esp_err_t flame_mode_set_config(const flame_config_t *cfg)
 {
+    ESP_LOGI(TAG, "set_config: dx=%d dy=%d rst=%d r=%d by=%d fd=%d fs=%d br=%d",
+             cfg->drift_x, cfg->drift_y, cfg->restore, cfg->radius,
+             cfg->bias_y, cfg->flicker_depth, cfg->flicker_speed, cfg->brightness);
     s_cfg = *cfg;
     return lamp_nvs_save_flame_config(cfg);
 }
@@ -190,17 +206,10 @@ void flame_mode_get_config(flame_config_t *cfg)
 
 void flame_mode_set_color(uint8_t warm, uint8_t neutral, uint8_t cool)
 {
-    float total = (float)warm + (float)neutral + (float)cool;
-    if (total < 1.0f) {
-        /* Default to warm-only if all channels zero */
-        s_ratio_w = 1.0f;
-        s_ratio_n = 0.0f;
-        s_ratio_c = 0.0f;
-    } else {
-        s_ratio_w = (float)warm / total;
-        s_ratio_n = (float)neutral / total;
-        s_ratio_c = (float)cool / total;
-    }
+    s_color_w = warm;
+    s_color_n = neutral;
+    s_color_c = cool;
+    ESP_LOGI(TAG, "set_color: [%d,%d,%d]", warm, neutral, cool);
 }
 
 bool flame_mode_is_active(void)
@@ -210,5 +219,6 @@ bool flame_mode_is_active(void)
 
 void flame_mode_set_master_override(uint8_t master)
 {
+    ESP_LOGI(TAG, "master_override: %d", master);
     s_master_override = master;
 }

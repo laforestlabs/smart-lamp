@@ -149,9 +149,20 @@ void lamp_control_set_state(uint8_t warm, uint8_t neutral, uint8_t cool, uint8_t
     s_active_scene.master  = master;
     lamp_nvs_save_active_scene(&s_active_scene);
 
+    ESP_LOGI(TAG, "set_state: [%d,%d,%d,%d] flags=0x%02x", warm, neutral, cool, master, s_flags);
+
     if (s_flags & MODE_FLAG_FLAME) {
-        /* Update flame colour ratios; let flame task handle rendering */
         flame_mode_set_color(warm, neutral, cool);
+        if (master == 0) {
+            /* App on/off: stop flame and turn off LEDs */
+            flame_mode_stop();
+            lamp_off();
+            s_lamp_on = false;
+        } else if (!flame_mode_is_active()) {
+            /* Turning back on: restart flame */
+            flame_mode_start();
+            s_lamp_on = true;
+        }
     } else if (!(s_flags & MODE_FLAG_AUTO)) {
         /* Manual mode: apply directly */
         apply_manual_scene();
@@ -174,17 +185,28 @@ static void control_task(void *arg)
         if (xQueueReceive(s_sensor_queue, &evt, portMAX_DELAY) == pdTRUE) {
             switch (evt.type) {
             case SENSOR_EVT_TOUCH_SHORT:
-                ESP_LOGI(TAG, "Touch: short tap");
-                if (s_flags == 0) {
-                    /* Toggle lamp on/off only in pure manual mode */
-                    s_lamp_on = !s_lamp_on;
-                    if (s_lamp_on) {
-                        apply_manual_scene();
+                ESP_LOGI(TAG, "Touch: short tap (on=%d, flags=0x%02x)", s_lamp_on, s_flags);
+                s_lamp_on = !s_lamp_on;
+                if (s_lamp_on) {
+                    if (s_flags & MODE_FLAG_FLAME) {
+                        flame_mode_set_color(s_active_scene.warm, s_active_scene.neutral,
+                                             s_active_scene.cool);
+                        if (!flame_mode_is_active()) {
+                            flame_mode_start();
+                        }
+                    } else if (s_flags & MODE_FLAG_AUTO) {
+                        auto_mode_enable();
                     } else {
-                        lamp_fill(0, 0, 0);
-                        lamp_set_master(0);
-                        lamp_flush();
+                        apply_manual_scene();
                     }
+                } else {
+                    if (s_flags & MODE_FLAG_FLAME) {
+                        flame_mode_stop();
+                    }
+                    if (s_flags & MODE_FLAG_AUTO) {
+                        auto_mode_disable();
+                    }
+                    lamp_off();
                 }
                 break;
 

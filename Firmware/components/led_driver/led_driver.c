@@ -29,13 +29,20 @@ esp_err_t led_driver_init(void)
     s_mutex = xSemaphoreCreateMutex();
     ESP_RETURN_ON_FALSE(s_mutex, ESP_ERR_NO_MEM, TAG, "mutex create failed");
 
-    /* Configure RMT TX channel */
+    /* Configure RMT TX channel.
+     * 31 LEDs × 3 bytes × 8 bits = 744 RMT symbols per frame.
+     * With small mem_block_symbols the RMT driver uses ping-pong ISR
+     * refill — if a BLE interrupt delays a refill by >80 µs, the LEDs
+     * see a false reset pulse mid-frame, shifting byte alignment and
+     * causing colour channel corruption (warm data appears as cool).
+     * Use 384 symbols (6 blocks) so each ping-pong half is 192 symbols
+     * (~230 µs of data) — much more tolerant of ISR latency. */
     rmt_tx_channel_config_t tx_cfg = {
         .gpio_num           = LED_GPIO,
         .clk_src            = RMT_CLK_SRC_DEFAULT,
         .resolution_hz      = RMT_RESOLUTION_HZ,
-        .mem_block_symbols   = 64,
-        .trans_queue_depth   = 4,
+        .mem_block_symbols   = 384,
+        .trans_queue_depth   = 1,
     };
     ESP_RETURN_ON_ERROR(rmt_new_tx_channel(&tx_cfg, &s_rmt_chan), TAG, "RMT TX init failed");
     ESP_RETURN_ON_ERROR(rmt_enable(s_rmt_chan), TAG, "RMT enable failed");
@@ -91,6 +98,9 @@ void lamp_get_pixel(uint8_t index, led_pixel_t *out)
     xSemaphoreGive(s_mutex);
 }
 
+/* Rate-limited anomaly counter for flush diagnostics */
+static int s_flush_anomaly_cooldown = 0;
+
 void lamp_flush(void)
 {
     /* Copy framebuffer and apply master brightness + gamma under lock */
@@ -108,14 +118,14 @@ void lamp_flush(void)
         s_tx_buf[i * 3 + 1] = w;
         s_tx_buf[i * 3 + 2] = n;
     }
-    xSemaphoreGive(s_mutex);
-
-    /* Transmit (blocks until previous TX completes) */
+    /* Transmit under lock — s_tx_buf must not be modified while the RMT
+     * encoder is progressively reading it during ping-pong refill. */
     rmt_transmit_config_t tx_config = {
         .loop_count = 0,
     };
     rmt_transmit(s_rmt_chan, s_encoder, s_tx_buf, sizeof(s_tx_buf), &tx_config);
     rmt_tx_wait_all_done(s_rmt_chan, portMAX_DELAY);
+    xSemaphoreGive(s_mutex);
 }
 
 void lamp_off(void)

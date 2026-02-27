@@ -166,7 +166,9 @@ Recommended ESP-IDF version: **v5.x** (latest stable).
 ### 3.2 LED Driver
 
 - Use the **RMT (Remote Control) peripheral** to generate SK6812-compatible waveforms.
-- Allocate a dedicated RMT channel and DMA buffer large enough for 31 × 32 bits.
+- Allocate a dedicated RMT channel with 384 symbol memory blocks (6 blocks) to minimise
+  ISR ping-pong refill events — smaller blocks risk BLE ISR latency causing false reset
+  pulses mid-frame, which corrupt channel byte alignment.
 - Maintain an internal frame buffer of 31 `led_pixel_t` structs — one per LED — so that
   effects like flame can set each LED independently before flushing.
 - Expose a layered API:
@@ -299,9 +301,10 @@ I_i = master_brightness × exp(−d² / (2 × σ_flame²))
 ```
 
 - `σ_flame` — Gaussian radius of the hot spot (configurable; default 1.4 grid units)
-- `I_i` is scaled 0–255 and becomes the **warm** channel value
-- **Neutral** channel = `I_i × 0.35` (a hint of neutral white at the periphery)
-- **Cool** channel = 0 (a candle has no cool component)
+- `I_i` is a 0.0–1.0 scale factor applied to the active scene's colour channels:
+  `warm_out = scene.warm × I_i`, `neutral_out = scene.neutral × I_i`,
+  `cool_out = scene.cool × I_i`. The flame is a pure spatial/temporal filter on
+  whatever colour the user has selected — it preserves the exact channel mix.
 
 #### Global Flicker
 
@@ -363,7 +366,8 @@ See §6 for full detail. Summary:
 ### 4.2 Manual Control Screen
 
 - **ON/OFF button** — prominent toggle at the top; sets master brightness to 0 (off) or
-  128 (on). Amber when on, grey when off.
+  128 (on). Amber when on, grey when off. Works in all modes: in flame mode it
+  stops/starts the flame task; in auto mode it disables/enables motion detection.
 - Three sliders: **Warm**, **Neutral**, **Cool** (0–100 %).
 - One master **Brightness** slider (scales all channels).
 - Real-time preview: changes write immediately to the LED State characteristic.
