@@ -8,6 +8,7 @@ import '../models/scene.dart';
 import '../providers/ble_provider.dart';
 import '../providers/lamp_state_provider.dart';
 import '../providers/scene_provider.dart';
+import '../providers/sync_config_provider.dart';
 import '../widgets/brightness_slider.dart';
 import '../widgets/channel_slider.dart';
 import '../widgets/mode_picker.dart';
@@ -23,6 +24,7 @@ class ControlScreen extends ConsumerWidget {
     final connState = ref.watch(connectionStateProvider);
     final flags = ref.watch(modeFlagsProvider);
     final ledState = ref.watch(lampStateProvider);
+    final syncConfig = ref.watch(syncConfigProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -187,6 +189,25 @@ class ControlScreen extends ConsumerWidget {
                 ),
               ),
             ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Card(
+              child: ListTile(
+                leading: Icon(
+                  Icons.group_work,
+                  color: syncConfig.isEnabled ? Colors.green : null,
+                ),
+                title: const Text('Group Sync'),
+                subtitle: Text(
+                  syncConfig.isEnabled
+                      ? 'Group ${syncConfig.groupId}'
+                      : 'Not configured',
+                ),
+                trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                onTap: () => context.push('/control/$deviceId/group'),
+              ),
+            ),
+          ),
         ],
       ),
       bottomNavigationBar: NavigationBar(

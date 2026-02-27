@@ -7,6 +7,7 @@
 #include "lamp_ota.h"
 #include "led_driver.h"
 #include "sensor.h"
+#include "esp_now_sync.h"
 #include "ble_service.h"
 #include "lamp_control.h"
 
@@ -31,10 +32,13 @@ void app_main(void)
     assert(sensor_queue);
     ESP_ERROR_CHECK(sensor_init(sensor_queue));
 
-    /* 5. Initialise BLE stack (but don't advertise yet) */
+    /* 5. Initialise ESP-NOW sync (WiFi STA + ESP-NOW, before BLE for coexistence) */
+    ESP_ERROR_CHECK(esp_now_sync_init());
+
+    /* 6. Initialise BLE stack (but don't advertise yet) */
     ESP_ERROR_CHECK(ble_init());
 
-    /* 6. Start the central lamp controller (creates its own task) */
+    /* 7. Start the central lamp controller (creates its own task) */
     ESP_ERROR_CHECK(lamp_control_init(sensor_queue));
 
     ESP_LOGI(TAG, "Initialisation complete");

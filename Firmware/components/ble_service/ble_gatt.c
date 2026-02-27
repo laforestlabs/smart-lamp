@@ -12,6 +12,7 @@
 #include "lamp_control.h"
 #include "sensor.h"
 #include "flame_mode.h"
+#include "esp_now_sync.h"
 
 static const char *TAG = "ble_gatt";
 
@@ -29,6 +30,7 @@ uint16_t g_ota_data_handle;
 uint16_t g_pir_sens_handle;
 uint16_t g_flame_config_handle;
 uint16_t g_device_info_handle;
+uint16_t g_sync_config_handle;
 
 /* Firmware version string */
 #define FW_VERSION "1.0.0"
@@ -367,6 +369,29 @@ static int device_info_access(uint16_t conn_handle, uint16_t attr_handle,
     return 0;
 }
 
+/* ── Sync Config (000E): R/W — [group_id:u8, wifi_mac:6B] ── */
+
+static int sync_config_access(uint16_t conn_handle, uint16_t attr_handle,
+                               struct ble_gatt_access_ctxt *ctxt, void *arg)
+{
+    if (ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR) {
+        uint8_t buf[7];
+        buf[0] = esp_now_sync_get_group();
+        esp_now_sync_get_mac(&buf[1]);
+        os_mbuf_append(ctxt->om, buf, sizeof(buf));
+        return 0;
+    }
+
+    if (ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR) {
+        uint8_t group_id;
+        os_mbuf_copydata(ctxt->om, 0, 1, &group_id);
+        esp_now_sync_set_group(group_id);
+        ESP_LOGI(TAG, "Sync group set to %u", group_id);
+        return 0;
+    }
+    return BLE_ATT_ERR_UNLIKELY;
+}
+
 /* ═══════════════════════ GATT Service Definition ═══════════════════════ */
 
 static const ble_uuid128_t svc_uuid = SVC_UUID_BASE;
@@ -384,6 +409,7 @@ static const ble_uuid128_t chr_ota_data_uuid         = CHR_UUID(0xAA, 0x0A);
 static const ble_uuid128_t chr_pir_sens_uuid         = CHR_UUID(0xAA, 0x0B);
 static const ble_uuid128_t chr_flame_config_uuid     = CHR_UUID(0xAA, 0x0C);
 static const ble_uuid128_t chr_device_info_uuid      = CHR_UUID(0xAA, 0x0D);
+static const ble_uuid128_t chr_sync_config_uuid      = CHR_UUID(0xAA, 0x0E);
 
 static const struct ble_gatt_svc_def s_gatt_svcs[] = {
     {
@@ -467,6 +493,12 @@ static const struct ble_gatt_svc_def s_gatt_svcs[] = {
                 .access_cb  = device_info_access,
                 .val_handle = &g_device_info_handle,
                 .flags      = BLE_GATT_CHR_F_READ,
+            },
+            { /* Sync Config (000E) */
+                .uuid       = &chr_sync_config_uuid.u,
+                .access_cb  = sync_config_access,
+                .val_handle = &g_sync_config_handle,
+                .flags      = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_WRITE,
             },
             { 0 }, /* terminator */
         },

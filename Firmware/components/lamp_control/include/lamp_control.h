@@ -44,6 +44,19 @@ void lamp_control_set_state(uint8_t warm, uint8_t neutral, uint8_t cool, uint8_t
  */
 void lamp_control_update_auto_config(const auto_config_t *cfg);
 
+/**
+ * Apply state received from ESP-NOW sync.
+ * Same as lamp_control_set_state() but does NOT re-broadcast (prevents loops).
+ */
+void lamp_control_set_state_from_sync(uint8_t warm, uint8_t neutral,
+                                      uint8_t cool, uint8_t master);
+
+/**
+ * Apply mode flags received from ESP-NOW sync.
+ * Same as lamp_control_set_flags() but does NOT re-broadcast (prevents loops).
+ */
+void lamp_control_set_flags_from_sync(uint8_t flags);
+
 #ifdef __cplusplus
 }
 #endif

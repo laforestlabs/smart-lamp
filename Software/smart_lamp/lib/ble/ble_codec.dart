@@ -7,6 +7,7 @@ import '../models/lamp_state.dart';
 import '../models/scene.dart';
 import '../models/schedule.dart';
 import '../models/sensor_data.dart';
+import '../models/sync_config.dart';
 
 class BleCodec {
   BleCodec._();
@@ -196,4 +197,18 @@ class BleCodec {
     if (bytes.isEmpty) return 'Unknown';
     return utf8.decode(bytes);
   }
+
+  // ── Sync Config ──
+
+  static SyncConfig decodeSyncConfig(List<int> bytes) {
+    if (bytes.length < 7) return const SyncConfig();
+    final groupId = bytes[0];
+    final mac = bytes
+        .sublist(1, 7)
+        .map((b) => b.toRadixString(16).padLeft(2, '0').toUpperCase())
+        .join(':');
+    return SyncConfig(groupId: groupId, wifiMac: mac);
+  }
+
+  static List<int> encodeSyncGroup(int groupId) => [groupId.clamp(0, 255)];
 }

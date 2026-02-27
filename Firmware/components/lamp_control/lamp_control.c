@@ -4,6 +4,7 @@
 #include "lamp_nvs.h"
 #include "auto_mode.h"
 #include "flame_mode.h"
+#include "esp_now_sync.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -23,6 +24,7 @@ static const char *TAG = "lamp_ctrl";
 
 static uint8_t          s_flags = 0;   /* bitmask: MODE_FLAG_AUTO | MODE_FLAG_FLAME */
 static bool             s_lamp_on = true;
+static bool             s_from_sync = false;  /* suppresses re-broadcast when true */
 static QueueHandle_t    s_sensor_queue;
 static scene_t          s_active_scene;
 
@@ -120,6 +122,12 @@ void lamp_control_set_flags(uint8_t flags)
     if (flags == 0) {
         apply_manual_scene();
     }
+
+    /* Broadcast to sync group (only for local changes) */
+    if (!s_from_sync) {
+        esp_now_sync_broadcast(s_active_scene.warm, s_active_scene.neutral,
+                               s_active_scene.cool, s_active_scene.master, flags);
+    }
 }
 
 void lamp_control_apply_scene(const scene_t *scene)
@@ -168,6 +176,26 @@ void lamp_control_set_state(uint8_t warm, uint8_t neutral, uint8_t cool, uint8_t
         apply_manual_scene();
     }
     /* Auto mode: state saved for next ON transition */
+
+    /* Broadcast to sync group (only for local changes) */
+    if (!s_from_sync) {
+        esp_now_sync_broadcast(warm, neutral, cool, master, s_flags);
+    }
+}
+
+void lamp_control_set_state_from_sync(uint8_t warm, uint8_t neutral,
+                                      uint8_t cool, uint8_t master)
+{
+    s_from_sync = true;
+    lamp_control_set_state(warm, neutral, cool, master);
+    s_from_sync = false;
+}
+
+void lamp_control_set_flags_from_sync(uint8_t flags)
+{
+    s_from_sync = true;
+    lamp_control_set_flags(flags);
+    s_from_sync = false;
 }
 
 void lamp_control_update_auto_config(const auto_config_t *cfg)
@@ -186,27 +214,23 @@ static void control_task(void *arg)
             switch (evt.type) {
             case SENSOR_EVT_TOUCH_SHORT:
                 ESP_LOGI(TAG, "Touch: short tap (on=%d, flags=0x%02x)", s_lamp_on, s_flags);
-                s_lamp_on = !s_lamp_on;
                 if (s_lamp_on) {
-                    if (s_flags & MODE_FLAG_FLAME) {
-                        flame_mode_set_color(s_active_scene.warm, s_active_scene.neutral,
-                                             s_active_scene.cool);
-                        if (!flame_mode_is_active()) {
-                            flame_mode_start();
-                        }
-                    } else if (s_flags & MODE_FLAG_AUTO) {
-                        auto_mode_enable();
-                    } else {
-                        apply_manual_scene();
-                    }
-                } else {
-                    if (s_flags & MODE_FLAG_FLAME) {
-                        flame_mode_stop();
-                    }
+                    /* Turn off: route through set_state so sync fires */
+                    lamp_control_set_state(s_active_scene.warm, s_active_scene.neutral,
+                                           s_active_scene.cool, 0);
                     if (s_flags & MODE_FLAG_AUTO) {
                         auto_mode_disable();
                     }
-                    lamp_off();
+                    s_lamp_on = false;
+                } else {
+                    /* Turn on: route through set_state so sync fires */
+                    lamp_control_set_state(s_active_scene.warm, s_active_scene.neutral,
+                                           s_active_scene.cool, s_active_scene.master > 0
+                                           ? s_active_scene.master : 128);
+                    if (s_flags & MODE_FLAG_AUTO) {
+                        auto_mode_enable();
+                    }
+                    s_lamp_on = true;
                 }
                 break;
 

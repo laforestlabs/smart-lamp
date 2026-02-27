@@ -87,6 +87,10 @@ esp_err_t lamp_nvs_load_pir_sensitivity(uint8_t *level);
 esp_err_t lamp_nvs_save_flame_config(const flame_config_t *cfg);
 esp_err_t lamp_nvs_load_flame_config(flame_config_t *cfg);
 
+/* ── Sync group ── */
+esp_err_t lamp_nvs_save_sync_group(uint8_t group_id);
+esp_err_t lamp_nvs_load_sync_group(uint8_t *group_id);
+
 #ifdef __cplusplus
 }
 #endif

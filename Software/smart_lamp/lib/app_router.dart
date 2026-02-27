@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'screens/auto_settings_screen.dart';
 import 'screens/control_screen.dart';
 import 'screens/flame_screen.dart';
+import 'screens/group_sync_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/ota_screen.dart';
 import 'screens/pairing_screen.dart';
@@ -50,6 +51,10 @@ final appRouter = GoRouter(
         GoRoute(
           path: 'ota',
           builder: (context, state) => const OtaScreen(),
+        ),
+        GoRoute(
+          path: 'group',
+          builder: (context, state) => const GroupSyncScreen(),
         ),
       ],
     ),

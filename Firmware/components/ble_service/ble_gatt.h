@@ -29,6 +29,7 @@ extern uint16_t g_ota_control_handle;
 extern uint16_t g_ota_data_handle;
 extern uint16_t g_flame_config_handle;
 extern uint16_t g_device_info_handle;
+extern uint16_t g_sync_config_handle;
 
 /**
  * Register the GATT service with NimBLE.

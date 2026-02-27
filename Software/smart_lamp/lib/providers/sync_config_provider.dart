@@ -1,0 +1,37 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../ble/ble_codec.dart';
+import '../ble/ble_service.dart';
+import '../ble/ble_uuids.dart';
+import '../ble/ble_connection_manager.dart';
+import '../models/sync_config.dart';
+import 'ble_provider.dart';
+
+class SyncConfigNotifier extends StateNotifier<SyncConfig> {
+  final BleService _bleService;
+  final BleConnectionManager _connManager;
+
+  SyncConfigNotifier(this._bleService, this._connManager)
+      : super(_connManager.initialSyncConfig ?? const SyncConfig());
+
+  Future<void> setGroupId(int groupId) async {
+    state = state.copyWith(groupId: groupId);
+    final deviceId = _connManager.deviceId;
+    if (deviceId == null) return;
+    try {
+      await _bleService.writeCharacteristic(
+        deviceId,
+        BleUuids.syncConfig,
+        BleCodec.encodeSyncGroup(groupId),
+      );
+    } catch (_) {}
+  }
+}
+
+final syncConfigProvider =
+    StateNotifierProvider<SyncConfigNotifier, SyncConfig>((ref) {
+  return SyncConfigNotifier(
+    ref.watch(bleServiceProvider),
+    ref.watch(connectionManagerProvider),
+  );
+});

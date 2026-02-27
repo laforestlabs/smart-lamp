@@ -8,6 +8,7 @@ import '../models/lamp_state.dart';
 import '../models/scene.dart';
 import '../models/schedule.dart';
 import '../models/sensor_data.dart';
+import '../models/sync_config.dart';
 import 'ble_codec.dart';
 import 'ble_service.dart';
 import 'ble_uuids.dart';
@@ -34,6 +35,7 @@ class BleConnectionManager {
   List<Schedule>? initialSchedules;
   int? initialPirSensitivity;
   String? firmwareVersion;
+  SyncConfig? initialSyncConfig;
 
   // Notification streams
   final _ledStateController = StreamController<LedState>.broadcast();
@@ -119,6 +121,10 @@ class BleConnectionManager {
       final infoBytes =
           await _bleService.readCharacteristic(deviceId, BleUuids.deviceInfo);
       firmwareVersion = BleCodec.decodeDeviceInfo(infoBytes);
+
+      final syncBytes =
+          await _bleService.readCharacteristic(deviceId, BleUuids.syncConfig);
+      initialSyncConfig = BleCodec.decodeSyncConfig(syncBytes);
     } catch (e) {
       // Non-fatal — we'll work with whatever we got
     }

@@ -323,3 +323,30 @@ esp_err_t lamp_nvs_load_flame_config(flame_config_t *cfg)
     }
     return ret;
 }
+
+/* ── Sync group ── */
+
+esp_err_t lamp_nvs_save_sync_group(uint8_t group_id)
+{
+    xSemaphoreTake(s_mutex, portMAX_DELAY);
+    nvs_handle_t h = open_nvs();
+    esp_err_t ret = nvs_set_u8(h, "sync_grp", group_id);
+    close_nvs(h);
+    xSemaphoreGive(s_mutex);
+    return ret;
+}
+
+esp_err_t lamp_nvs_load_sync_group(uint8_t *group_id)
+{
+    xSemaphoreTake(s_mutex, portMAX_DELAY);
+    nvs_handle_t h = open_nvs();
+    esp_err_t ret = nvs_get_u8(h, "sync_grp", group_id);
+    nvs_close(h);
+    xSemaphoreGive(s_mutex);
+
+    if (ret == ESP_ERR_NVS_NOT_FOUND) {
+        *group_id = 0;  /* disabled */
+        return ESP_OK;
+    }
+    return ret;
+}
