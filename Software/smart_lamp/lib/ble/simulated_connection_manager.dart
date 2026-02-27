@@ -7,6 +7,7 @@ import '../models/lamp_state.dart';
 import '../models/scene.dart';
 import '../models/schedule.dart';
 import '../models/sensor_data.dart';
+import '../models/sync_config.dart';
 import 'ble_connection_manager.dart';
 import 'ble_service.dart';
 
@@ -43,6 +44,8 @@ class SimulatedBleConnectionManager implements BleConnectionManager {
   int? initialPirSensitivity;
   @override
   String? firmwareVersion;
+  @override
+  SyncConfig? initialSyncConfig;
 
   SimulatedBleConnectionManager(this._bleService);
 
