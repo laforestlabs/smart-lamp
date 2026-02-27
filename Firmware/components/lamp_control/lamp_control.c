@@ -141,6 +141,24 @@ void lamp_control_apply_scene(const scene_t *scene)
     /* If auto-only or auto+flame: scene stored for next auto ON transition */
 }
 
+void lamp_control_set_state(uint8_t warm, uint8_t neutral, uint8_t cool, uint8_t master)
+{
+    s_active_scene.warm    = warm;
+    s_active_scene.neutral = neutral;
+    s_active_scene.cool    = cool;
+    s_active_scene.master  = master;
+    lamp_nvs_save_active_scene(&s_active_scene);
+
+    if (s_flags & MODE_FLAG_FLAME) {
+        /* Update flame colour ratios; let flame task handle rendering */
+        flame_mode_set_color(warm, neutral, cool);
+    } else if (!(s_flags & MODE_FLAG_AUTO)) {
+        /* Manual mode: apply directly */
+        apply_manual_scene();
+    }
+    /* Auto mode: state saved for next ON transition */
+}
+
 void lamp_control_update_auto_config(const auto_config_t *cfg)
 {
     auto_mode_set_config(cfg);

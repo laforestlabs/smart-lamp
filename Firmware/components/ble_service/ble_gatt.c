@@ -55,18 +55,8 @@ static int led_state_access(uint16_t conn_handle, uint16_t attr_handle,
         uint8_t buf[4];
         os_mbuf_copydata(ctxt->om, 0, 4, buf);
 
-        lamp_fill(buf[0], buf[1], buf[2]);
-        lamp_set_master(buf[3]);
-        lamp_flush();
-
-        /* Save as active scene */
-        scene_t scene;
-        lamp_nvs_load_active_scene(&scene);
-        scene.warm    = buf[0];
-        scene.neutral = buf[1];
-        scene.cool    = buf[2];
-        scene.master  = buf[3];
-        lamp_nvs_save_active_scene(&scene);
+        /* Route through lamp_control so flame/auto modes are respected */
+        lamp_control_set_state(buf[0], buf[1], buf[2], buf[3]);
 
         return 0;
     }

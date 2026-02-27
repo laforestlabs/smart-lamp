@@ -14,9 +14,21 @@ class FlameConfigNotifier extends StateNotifier<FlameConfig> {
   final Debouncer _debouncer = Debouncer(delay: const Duration(milliseconds: 100));
 
   FlameConfigNotifier(this._bleService, this._connManager) : super(const FlameConfig()) {
+    // Use cached initial config immediately, then read fresh from device
     if (_connManager.initialFlameConfig != null) {
       state = _connManager.initialFlameConfig!;
     }
+    _readFromDevice();
+  }
+
+  Future<void> _readFromDevice() async {
+    final deviceId = _connManager.deviceId;
+    if (deviceId == null) return;
+    try {
+      final bytes = await _bleService.readCharacteristic(
+          deviceId, BleUuids.flameConfig);
+      state = BleCodec.decodeFlameConfig(bytes);
+    } catch (_) {}
   }
 
   void setDrift(int value) {

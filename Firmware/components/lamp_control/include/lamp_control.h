@@ -32,6 +32,14 @@ void lamp_control_set_flags(uint8_t flags);
 void lamp_control_apply_scene(const scene_t *scene);
 
 /**
+ * Update LED state (warm/neutral/cool/master) in a mode-aware way.
+ * In manual mode: applies directly to framebuffer.
+ * In flame mode:  updates colour ratios without interrupting animation.
+ * In auto mode:   saves state for next ON transition.
+ */
+void lamp_control_set_state(uint8_t warm, uint8_t neutral, uint8_t cool, uint8_t master);
+
+/**
  * Update auto-mode config while auto mode is running.
  */
 void lamp_control_update_auto_config(const auto_config_t *cfg);
