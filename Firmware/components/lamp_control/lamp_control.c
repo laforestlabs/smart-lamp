@@ -198,6 +198,17 @@ void lamp_control_set_flags_from_sync(uint8_t flags)
     s_from_sync = false;
 }
 
+void lamp_control_apply_sync(uint8_t warm, uint8_t neutral, uint8_t cool,
+                              uint8_t master, uint8_t flags)
+{
+    s_from_sync = true;
+    lamp_control_set_flags(flags);
+    lamp_control_set_state(warm, neutral, cool, master);
+    /* Keep s_lamp_on in sync with the actual state */
+    s_lamp_on = (master > 0);
+    s_from_sync = false;
+}
+
 void lamp_control_update_auto_config(const auto_config_t *cfg)
 {
     auto_mode_set_config(cfg);

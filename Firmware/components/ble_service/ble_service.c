@@ -98,6 +98,8 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg)
     case BLE_GAP_EVENT_DISCONNECT:
         ESP_LOGI(TAG, "Client disconnected (reason=%d)", event->disconnect.reason);
         s_connected = false;
+        /* Restart advertising so the app can reconnect */
+        ble_start_advertising();
         break;
 
     case BLE_GAP_EVENT_ADV_COMPLETE:

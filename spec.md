@@ -568,18 +568,38 @@ disconnect it before booting with BLE.
 - **Do not** modify `esp_phy/src/phy_init.c` to change the fallback calibration mode —
   the default (`PHY_RF_CAL_FULL` when no stored data exists) is correct.
 
-### 8.3 Board Status (as of 2026-02-25)
+### 8.3 Board Status (as of 2026-02-28)
 
 | Board | MAC (BT) | Device Name | Status |
 |---|---|---|---|
-| SN001 | c4:4f:33:11:aa:9f | SmartLamp-AA9F | Flashed, BLE working. LEDs and light sensor need PCB rework. |
-| SN002 | 30:ae:a4:07:59:d2 | SmartLamp-59D2 | Flashed, BLE working. Motion sensor verified. LEDs and light sensor need PCB rework. |
+| SN001 | c4:4f:33:11:aa:9f | SmartLamp-AA9F | Flashed (OTA), BLE + ESP-NOW working. LEDs and light sensor need PCB rework. |
+| SN002 | 30:ae:a4:07:59:d2 | SmartLamp-59D2 | Flashed (OTA), BLE + ESP-NOW working. Motion sensor verified. LEDs and light sensor need PCB rework. |
 | SmartLamp-6B68 | 30:ae:a4:07:6b:68 | SmartLamp-6B68 | Flashed, functional |
 
 **Verified working:** BLE advertising, BLE connection + bonding, MTU 512 negotiation,
-GATT read/write/notify, PIR motion detection, mode flags (auto/flame independent toggles).
+GATT read/write/notify, PIR motion detection, mode flags (auto/flame independent toggles),
+OTA firmware updates (BLE, Python tool + Flutter app), ESP-NOW group sync (mostly working,
+occasional stuck lamp — see §8.6), BLE re-advertising after disconnect, multi-device app switching.
 
 **Not yet verified (pending PCB fixes):** LED output, ambient light sensor ADC reading.
+
+### 8.6 ESP-NOW Group Sync
+
+Lamps with the same group ID (1–255, 0 = disabled) broadcast state changes (on/off,
+brightness, colour, mode flags) to each other via ESP-NOW over WiFi channel 1.
+
+**Architecture:**
+- WiFi STA mode (no AP connection) provides the radio for ESP-NOW
+- BLE init must happen BEFORE WiFi init on ESP32 for coexistence
+- 13-byte packed broadcast message (magic, version, group_id, sequence, WNCM, flags)
+- Length-1 FreeRTOS queue with `xQueueOverwrite` for broadcast coalescing
+- Loop prevention: `s_from_sync` flag in `lamp_control.c`; `lamp_control_apply_sync()`
+  applies flags + state + `s_lamp_on` atomically
+
+**Known issue:** Receiving lamp occasionally gets stuck and stops responding to sync
+messages or BLE connections. Suspected cause: `lamp_control_apply_sync()` calling
+`set_flags()` → mode transition (flame start/stop) that blocks or crashes in the WiFi
+task context (ESP-NOW receive callback). Needs serial monitor investigation.
 
 ### 8.4 Temporary Firmware Behaviour
 
@@ -587,6 +607,50 @@ GATT read/write/notify, PIR motion detection, mode flags (auto/flame independent
   power-up, regardless of existing bonds. This is a temporary measure because the touch
   button hardware is not yet functional. Revert to bond-count check + touch long-press
   once the AT42QT1010 circuit is verified.
+
+### 8.5 Build & Deploy Procedures
+
+#### Firmware (ESP-IDF)
+
+```bash
+cd Firmware
+idf.py build
+```
+
+**Serial flash** (programming jig):
+```bash
+sudo chmod a+rw /dev/ttyUSB0
+~/.espressif/python_env/idf5.3_py3.13_env/bin/python -m esptool \
+  --chip esp32 -p /dev/ttyUSB0 -b 460800 --after hard_reset \
+  write_flash --flash_mode dio --flash_size 4MB --flash_freq 80m \
+  0x1000 build/bootloader/bootloader.bin \
+  0x8000 build/partition_table/partition-table.bin \
+  0xf000 build/ota_data_initial.bin \
+  0x20000 build/smart_lamp.bin
+```
+
+**OTA flash** (over BLE, for assembled lamps):
+```bash
+python3 ota_flash.py build/smart_lamp.bin
+```
+Or use the Device tab in the Flutter app (file picker → progress bar).
+
+#### Flutter App
+
+```bash
+cd Software/smart_lamp
+/home/jason/flutter/bin/flutter build apk --debug
+```
+
+**Install to phone** — use `adb install` directly:
+```bash
+adb -s 18121JECB02951 install -r build/app/outputs/flutter-apk/app-debug.apk
+```
+
+> **WARNING:** Do NOT use `flutter install` without `--debug`. It defaults to the
+> release APK (`app-release.apk`), which may be a stale build from a previous session.
+> Always use `adb install -r` with the explicit debug APK path, or pass `--debug`:
+> `flutter install --debug`.
 
 ---
 

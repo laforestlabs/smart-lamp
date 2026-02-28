@@ -32,11 +32,11 @@ void app_main(void)
     assert(sensor_queue);
     ESP_ERROR_CHECK(sensor_init(sensor_queue));
 
-    /* 5. Initialise ESP-NOW sync (WiFi STA + ESP-NOW, before BLE for coexistence) */
-    ESP_ERROR_CHECK(esp_now_sync_init());
-
-    /* 6. Initialise BLE stack (but don't advertise yet) */
+    /* 5. Initialise BLE stack (before WiFi — BT controller must init first on ESP32) */
     ESP_ERROR_CHECK(ble_init());
+
+    /* 6. Initialise ESP-NOW sync (WiFi STA + ESP-NOW, after BLE for coexistence) */
+    ESP_ERROR_CHECK(esp_now_sync_init());
 
     /* 7. Start the central lamp controller (creates its own task) */
     ESP_ERROR_CHECK(lamp_control_init(sensor_queue));

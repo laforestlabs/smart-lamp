@@ -110,6 +110,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     if (currentState == LampConnectionState.connected) {
                       context.push('/control/${lamp.deviceId}');
                     } else {
+                      if (connManager.deviceId != null &&
+                          connManager.deviceId != lamp.deviceId) {
+                        connManager.disconnect();
+                      }
                       connManager.connect(lamp.deviceId);
                     }
                   },

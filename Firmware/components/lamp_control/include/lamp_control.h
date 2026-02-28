@@ -57,6 +57,13 @@ void lamp_control_set_state_from_sync(uint8_t warm, uint8_t neutral,
  */
 void lamp_control_set_flags_from_sync(uint8_t flags);
 
+/**
+ * Apply full state + flags from ESP-NOW sync atomically.
+ * Sets flags, state, and s_lamp_on together without re-broadcasting.
+ */
+void lamp_control_apply_sync(uint8_t warm, uint8_t neutral, uint8_t cool,
+                              uint8_t master, uint8_t flags);
+
 #ifdef __cplusplus
 }
 #endif

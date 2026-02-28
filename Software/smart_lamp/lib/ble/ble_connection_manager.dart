@@ -51,6 +51,12 @@ class BleConnectionManager {
   Stream<List<Schedule>> get scheduleListStream =>
       _scheduleListController.stream;
 
+  final _modeFlagsController = StreamController<ModeFlags>.broadcast();
+  Stream<ModeFlags> get modeFlagsStream => _modeFlagsController.stream;
+
+  final _syncConfigController = StreamController<SyncConfig>.broadcast();
+  Stream<SyncConfig> get syncConfigStream => _syncConfigController.stream;
+
   final _otaStatusController = StreamController<int>.broadcast();
   Stream<int> get otaStatusStream => _otaStatusController.stream;
 
@@ -61,10 +67,14 @@ class BleConnectionManager {
   String? get deviceId => _deviceId;
 
   Future<void> connect(String deviceId) async {
+    // Clean up previous connection
+    _cancelNotifications();
+    _connectionSub?.cancel();
+    _clearInitialState();
+
     _deviceId = deviceId;
     _connectionStateController.add(LampConnectionState.connecting);
 
-    _connectionSub?.cancel();
     _connectionSub = _bleService.connectToDevice(deviceId).listen(
       (update) async {
         if (update.connectionState == DeviceConnectionState.connected) {
@@ -129,6 +139,13 @@ class BleConnectionManager {
       // Non-fatal — we'll work with whatever we got
     }
 
+    // Push initial state through streams so existing notifiers pick it up
+    if (initialLedState != null) _ledStateController.add(initialLedState!);
+    if (initialModeFlags != null) _modeFlagsController.add(initialModeFlags!);
+    if (initialScenes != null) _sceneListController.add(initialScenes!);
+    if (initialSchedules != null) _scheduleListController.add(initialSchedules!);
+    if (initialSyncConfig != null) _syncConfigController.add(initialSyncConfig!);
+
     // Subscribe to notifications
     _notifySubs.add(
       _bleService
@@ -180,6 +197,18 @@ class BleConnectionManager {
     _notifySubs.clear();
   }
 
+  void _clearInitialState() {
+    initialLedState = null;
+    initialModeFlags = null;
+    initialAutoConfig = null;
+    initialFlameConfig = null;
+    initialScenes = null;
+    initialSchedules = null;
+    initialPirSensitivity = null;
+    firmwareVersion = null;
+    initialSyncConfig = null;
+  }
+
   void disconnect() {
     _connectionSub?.cancel();
     _cancelNotifications();
@@ -191,9 +220,11 @@ class BleConnectionManager {
     disconnect();
     _connectionStateController.close();
     _ledStateController.close();
+    _modeFlagsController.close();
     _sensorDataController.close();
     _sceneListController.close();
     _scheduleListController.close();
+    _syncConfigController.close();
     _otaStatusController.close();
   }
 }

@@ -87,12 +87,16 @@ final lampStateProvider =
 class ModeFlagsNotifier extends StateNotifier<ModeFlags> {
   final BleService _bleService;
   final BleConnectionManager _connManager;
+  StreamSubscription? _modeFlagsSub;
 
   ModeFlagsNotifier(this._bleService, this._connManager)
       : super(const ModeFlags()) {
     if (_connManager.initialModeFlags != null) {
       state = _connManager.initialModeFlags!;
     }
+    _modeFlagsSub = _connManager.modeFlagsStream.listen((flags) {
+      state = flags;
+    });
   }
 
   Future<void> setAuto(bool enabled) async {
@@ -115,6 +119,12 @@ class ModeFlagsNotifier extends StateNotifier<ModeFlags> {
         BleCodec.encodeModeFlags(state),
       );
     } catch (_) {}
+  }
+
+  @override
+  void dispose() {
+    _modeFlagsSub?.cancel();
+    super.dispose();
   }
 }
 

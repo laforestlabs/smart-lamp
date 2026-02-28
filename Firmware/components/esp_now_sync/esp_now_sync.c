@@ -58,6 +58,9 @@ static esp_err_t wifi_init_sta_minimal(void)
     ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
     ESP_ERROR_CHECK(esp_wifi_start());
 
+    /* Pin to channel 1 so all lamps are on the same channel for ESP-NOW */
+    ESP_ERROR_CHECK(esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE));
+
     esp_read_mac(s_own_mac, ESP_MAC_WIFI_STA);
 
     ESP_LOGI(TAG, "WiFi STA started (no AP) MAC=%02X:%02X:%02X:%02X:%02X:%02X",
@@ -85,9 +88,9 @@ static void esp_now_recv_cb(const esp_now_recv_info_t *info,
                  (unsigned long)msg->sequence,
                  msg->warm, msg->neutral, msg->cool, msg->master, msg->flags);
 
-        lamp_control_set_flags_from_sync(msg->flags);
-        lamp_control_set_state_from_sync(msg->warm, msg->neutral,
-                                         msg->cool, msg->master);
+        /* Apply flags and state together to avoid intermediate states */
+        lamp_control_apply_sync(msg->warm, msg->neutral, msg->cool,
+                                msg->master, msg->flags);
     }
 }
 
