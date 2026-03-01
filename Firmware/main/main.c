@@ -36,7 +36,7 @@ void app_main(void)
     ESP_ERROR_CHECK(ble_init());
 
     /* 6. Initialise ESP-NOW sync (WiFi STA + ESP-NOW, after BLE for coexistence) */
-    ESP_ERROR_CHECK(esp_now_sync_init());
+    ESP_ERROR_CHECK(esp_now_sync_init(sensor_queue));
 
     /* 7. Start the central lamp controller (creates its own task) */
     ESP_ERROR_CHECK(lamp_control_init(sensor_queue));

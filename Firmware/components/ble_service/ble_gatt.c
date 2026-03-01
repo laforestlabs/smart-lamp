@@ -31,6 +31,7 @@ uint16_t g_pir_sens_handle;
 uint16_t g_flame_config_handle;
 uint16_t g_device_info_handle;
 uint16_t g_sync_config_handle;
+uint16_t g_lamp_name_handle;
 
 /* Firmware version string */
 #define FW_VERSION "1.0.0"
@@ -392,6 +393,33 @@ static int sync_config_access(uint16_t conn_handle, uint16_t attr_handle,
     return BLE_ATT_ERR_UNLIKELY;
 }
 
+/* ── Lamp Name (000F): R/W — UTF-8 string, max 32 bytes ── */
+
+static int lamp_name_access(uint16_t conn_handle, uint16_t attr_handle,
+                             struct ble_gatt_access_ctxt *ctxt, void *arg)
+{
+    if (ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR) {
+        char name[LAMP_NAME_MAX + 1];
+        lamp_nvs_load_lamp_name(name, sizeof(name));
+        os_mbuf_append(ctxt->om, name, strlen(name));
+        return 0;
+    }
+
+    if (ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR) {
+        uint16_t len = OS_MBUF_PKTLEN(ctxt->om);
+        if (len > LAMP_NAME_MAX) len = LAMP_NAME_MAX;
+
+        char name[LAMP_NAME_MAX + 1];
+        os_mbuf_copydata(ctxt->om, 0, len, name);
+        name[len] = '\0';
+
+        lamp_nvs_save_lamp_name(name);
+        ESP_LOGI(TAG, "Lamp name set to '%s'", name);
+        return 0;
+    }
+    return BLE_ATT_ERR_UNLIKELY;
+}
+
 /* ═══════════════════════ GATT Service Definition ═══════════════════════ */
 
 static const ble_uuid128_t svc_uuid = SVC_UUID_BASE;
@@ -410,6 +438,7 @@ static const ble_uuid128_t chr_pir_sens_uuid         = CHR_UUID(0xAA, 0x0B);
 static const ble_uuid128_t chr_flame_config_uuid     = CHR_UUID(0xAA, 0x0C);
 static const ble_uuid128_t chr_device_info_uuid      = CHR_UUID(0xAA, 0x0D);
 static const ble_uuid128_t chr_sync_config_uuid      = CHR_UUID(0xAA, 0x0E);
+static const ble_uuid128_t chr_lamp_name_uuid        = CHR_UUID(0xAA, 0x0F);
 
 static const struct ble_gatt_svc_def s_gatt_svcs[] = {
     {
@@ -498,6 +527,12 @@ static const struct ble_gatt_svc_def s_gatt_svcs[] = {
                 .uuid       = &chr_sync_config_uuid.u,
                 .access_cb  = sync_config_access,
                 .val_handle = &g_sync_config_handle,
+                .flags      = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_WRITE,
+            },
+            { /* Lamp Name (000F) */
+                .uuid       = &chr_lamp_name_uuid.u,
+                .access_cb  = lamp_name_access,
+                .val_handle = &g_lamp_name_handle,
                 .flags      = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_WRITE,
             },
             { 0 }, /* terminator */

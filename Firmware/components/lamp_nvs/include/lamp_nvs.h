@@ -8,6 +8,7 @@
 extern "C" {
 #endif
 
+#define LAMP_NAME_MAX   32
 #define SCENE_NAME_MAX  16
 #define SCENE_MAX       16
 #define SCHEDULE_MAX    16
@@ -90,6 +91,10 @@ esp_err_t lamp_nvs_load_flame_config(flame_config_t *cfg);
 /* ── Sync group ── */
 esp_err_t lamp_nvs_save_sync_group(uint8_t group_id);
 esp_err_t lamp_nvs_load_sync_group(uint8_t *group_id);
+
+/* ── Lamp name ── */
+esp_err_t lamp_nvs_save_lamp_name(const char *name);
+esp_err_t lamp_nvs_load_lamp_name(char *name, size_t max_len);
 
 #ifdef __cplusplus
 }

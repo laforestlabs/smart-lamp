@@ -1,4 +1,5 @@
 #include "esp_now_sync.h"
+#include "sensor.h"
 #include "esp_wifi.h"
 #include "esp_now.h"
 #include "esp_log.h"
@@ -6,7 +7,6 @@
 #include "esp_netif.h"
 #include "esp_event.h"
 #include "lamp_nvs.h"
-#include "lamp_control.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
@@ -38,6 +38,7 @@ static uint8_t       s_group_id = 0;
 static uint32_t      s_seq = 0;
 static uint8_t       s_own_mac[6];
 static QueueHandle_t s_tx_queue;
+static QueueHandle_t s_rx_queue;   /* sensor queue for deferred sync processing */
 
 /* ── WiFi minimal init (STA mode, no AP connection) ── */
 
@@ -88,9 +89,18 @@ static void esp_now_recv_cb(const esp_now_recv_info_t *info,
                  (unsigned long)msg->sequence,
                  msg->warm, msg->neutral, msg->cool, msg->master, msg->flags);
 
-        /* Apply flags and state together to avoid intermediate states */
-        lamp_control_apply_sync(msg->warm, msg->neutral, msg->cool,
-                                msg->master, msg->flags);
+        /* Post to lamp_control task via sensor queue — never block WiFi task */
+        sensor_event_t evt = {
+            .type = SENSOR_EVT_SYNC,
+            .data.sync = {
+                .warm    = msg->warm,
+                .neutral = msg->neutral,
+                .cool    = msg->cool,
+                .master  = msg->master,
+                .flags   = msg->flags,
+            },
+        };
+        xQueueSend(s_rx_queue, &evt, 0);  /* non-blocking */
     }
 }
 
@@ -105,9 +115,15 @@ static void sync_tx_task(void *arg)
         if (xQueueReceive(s_tx_queue, &msg, portMAX_DELAY) == pdTRUE) {
             if (s_group_id == 0) continue;
 
-            esp_err_t ret = esp_now_send(broadcast, (uint8_t *)&msg, sizeof(msg));
-            if (ret != ESP_OK) {
-                ESP_LOGW(TAG, "send failed: %s", esp_err_to_name(ret));
+            /* Send twice with a short gap to improve reliability.
+             * ESP-NOW broadcast has no ACK, so duplicates are expected
+             * and handled by the receiver (same seq → same state, idempotent). */
+            for (int i = 0; i < 2; i++) {
+                esp_err_t ret = esp_now_send(broadcast, (uint8_t *)&msg, sizeof(msg));
+                if (ret != ESP_OK) {
+                    ESP_LOGW(TAG, "send failed: %s", esp_err_to_name(ret));
+                }
+                if (i == 0) vTaskDelay(pdMS_TO_TICKS(15));
             }
         }
     }
@@ -115,8 +131,9 @@ static void sync_tx_task(void *arg)
 
 /* ── Public API ── */
 
-esp_err_t esp_now_sync_init(void)
+esp_err_t esp_now_sync_init(QueueHandle_t sensor_queue)
 {
+    s_rx_queue = sensor_queue;
     lamp_nvs_load_sync_group(&s_group_id);
 
     ESP_ERROR_CHECK(wifi_init_sta_minimal());

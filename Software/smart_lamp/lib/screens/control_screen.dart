@@ -6,6 +6,8 @@ import '../ble/ble_connection_manager.dart';
 import '../models/lamp_state.dart';
 import '../models/scene.dart';
 import '../providers/ble_provider.dart';
+import '../providers/device_list_provider.dart';
+import '../providers/lamp_name_provider.dart';
 import '../providers/lamp_state_provider.dart';
 import '../providers/scene_provider.dart';
 import '../providers/sync_config_provider.dart';
@@ -19,16 +21,67 @@ class ControlScreen extends ConsumerWidget {
 
   const ControlScreen({super.key, required this.deviceId});
 
+  void _showRenameDialog(BuildContext context, WidgetRef ref, String currentName) {
+    final controller = TextEditingController(text: currentName);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Rename Lamp'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: 32,
+          decoration: const InputDecoration(
+            hintText: 'e.g. Living Room',
+            labelText: 'Lamp Name',
+          ),
+          onSubmitted: (_) => Navigator.of(ctx).pop(controller.text.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    ).then((name) {
+      if (name != null && name.isNotEmpty) {
+        ref.read(lampNameProvider.notifier).setName(name);
+        ref.read(deviceListProvider.notifier).renameLamp(deviceId, name);
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final connState = ref.watch(connectionStateProvider);
     final flags = ref.watch(modeFlagsProvider);
     final ledState = ref.watch(lampStateProvider);
     final syncConfig = ref.watch(syncConfigProvider);
+    final lampName = ref.watch(lampNameProvider);
+    final lamps = ref.watch(deviceListProvider);
+    final bondedLamp = lamps.where((l) => l.deviceId == deviceId).firstOrNull;
+    final displayName = lampName.isNotEmpty
+        ? lampName
+        : bondedLamp?.name ?? 'Smart Lamp';
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Smart Lamp'),
+        title: GestureDetector(
+          onTap: () => _showRenameDialog(context, ref, lampName),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(child: Text(displayName, overflow: TextOverflow.ellipsis)),
+              const SizedBox(width: 4),
+              Icon(Icons.edit, size: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
+            ],
+          ),
+        ),
         actions: [
           // Connection indicator
           Padding(

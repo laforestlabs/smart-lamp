@@ -7,6 +7,7 @@
 #include "esp_random.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 
 static const char *TAG = "flame";
 
@@ -29,10 +30,11 @@ static const char *TAG = "flame";
 /* flicker_speed: 0–255 → 1.0–10.0 Hz */
 #define SCALE_FLICKER_S(v)  (1.0f + (float)(v) / 255.0f * 9.0f)
 
-static TaskHandle_t     s_task;
-static volatile bool    s_running;
-static flame_config_t   s_cfg;
-static volatile uint8_t s_master_override = 255;
+static TaskHandle_t      s_task = NULL;
+static volatile bool     s_running;
+static SemaphoreHandle_t s_task_done;    /* signalled when flame task exits */
+static flame_config_t    s_cfg;
+static volatile uint8_t  s_master_override = 255;
 
 /* Base colour values (0–255) — set from active scene */
 static volatile uint8_t s_color_w = 255;
@@ -155,6 +157,8 @@ static void flame_task(void *arg)
     }
 
     lamp_off();
+    s_task = NULL;
+    xSemaphoreGive(s_task_done);
     vTaskDelete(NULL);
 }
 
@@ -163,6 +167,18 @@ static void flame_task(void *arg)
 esp_err_t flame_mode_start(void)
 {
     if (s_running) return ESP_OK;
+
+    /* Create the semaphore once (lazy init) */
+    if (!s_task_done) {
+        s_task_done = xSemaphoreCreateBinary();
+        assert(s_task_done);
+    }
+
+    /* If a previous task is still winding down, wait for it */
+    if (s_task != NULL) {
+        ESP_LOGW(TAG, "Waiting for previous flame task to exit");
+        xSemaphoreTake(s_task_done, pdMS_TO_TICKS(500));
+    }
 
     lamp_nvs_load_flame_config(&s_cfg);
     s_master_override = 255;
@@ -186,8 +202,12 @@ void flame_mode_stop(void)
 {
     if (!s_running) return;
     s_running = false;
-    /* Task will self-delete after loop exits */
     ESP_LOGI(TAG, "Flame mode stopping");
+
+    /* Wait for the task to actually exit before returning */
+    if (s_task != NULL && s_task_done) {
+        xSemaphoreTake(s_task_done, pdMS_TO_TICKS(500));
+    }
 }
 
 esp_err_t flame_mode_set_config(const flame_config_t *cfg)

@@ -26,12 +26,20 @@ typedef enum {
     SENSOR_EVT_TOUCH_SHORT,
     SENSOR_EVT_TOUCH_LONG,
     SENSOR_EVT_LUX_UPDATE,
+    SENSOR_EVT_SYNC,            /* ESP-NOW state received from peer */
 } sensor_event_type_t;
 
 typedef struct {
     sensor_event_type_t type;
     union {
         uint8_t lux;            /* 0–100 for LUX_UPDATE */
+        struct {                /* SENSOR_EVT_SYNC */
+            uint8_t warm;
+            uint8_t neutral;
+            uint8_t cool;
+            uint8_t master;
+            uint8_t flags;
+        } sync;
     } data;
 } sensor_event_t;
 

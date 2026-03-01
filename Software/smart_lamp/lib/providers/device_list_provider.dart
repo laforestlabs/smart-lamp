@@ -26,6 +26,15 @@ class DeviceListNotifier extends StateNotifier<List<BondedLamp>> {
     await _storage.removeBondedLamp(deviceId);
     state = _storage.getBondedLamps();
   }
+
+  Future<void> renameLamp(String deviceId, String newName) async {
+    final lamp = state.firstWhere(
+      (l) => l.deviceId == deviceId,
+      orElse: () => BondedLamp(deviceId: deviceId, name: newName),
+    );
+    await _storage.addBondedLamp(BondedLamp(deviceId: deviceId, name: newName));
+    state = _storage.getBondedLamps();
+  }
 }
 
 final deviceListProvider =

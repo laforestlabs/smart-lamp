@@ -36,6 +36,7 @@ class BleConnectionManager {
   int? initialPirSensitivity;
   String? firmwareVersion;
   SyncConfig? initialSyncConfig;
+  String? initialLampName;
 
   // Notification streams
   final _ledStateController = StreamController<LedState>.broadcast();
@@ -56,6 +57,9 @@ class BleConnectionManager {
 
   final _syncConfigController = StreamController<SyncConfig>.broadcast();
   Stream<SyncConfig> get syncConfigStream => _syncConfigController.stream;
+
+  final _lampNameController = StreamController<String>.broadcast();
+  Stream<String> get lampNameStream => _lampNameController.stream;
 
   final _otaStatusController = StreamController<int>.broadcast();
   Stream<int> get otaStatusStream => _otaStatusController.stream;
@@ -135,6 +139,10 @@ class BleConnectionManager {
       final syncBytes =
           await _bleService.readCharacteristic(deviceId, BleUuids.syncConfig);
       initialSyncConfig = BleCodec.decodeSyncConfig(syncBytes);
+
+      final nameBytes =
+          await _bleService.readCharacteristic(deviceId, BleUuids.lampName);
+      initialLampName = BleCodec.decodeLampName(nameBytes);
     } catch (e) {
       // Non-fatal — we'll work with whatever we got
     }
@@ -145,6 +153,7 @@ class BleConnectionManager {
     if (initialScenes != null) _sceneListController.add(initialScenes!);
     if (initialSchedules != null) _scheduleListController.add(initialSchedules!);
     if (initialSyncConfig != null) _syncConfigController.add(initialSyncConfig!);
+    _lampNameController.add(initialLampName ?? '');
 
     // Subscribe to notifications
     _notifySubs.add(
@@ -207,6 +216,7 @@ class BleConnectionManager {
     initialPirSensitivity = null;
     firmwareVersion = null;
     initialSyncConfig = null;
+    initialLampName = null;
   }
 
   void disconnect() {
@@ -225,6 +235,7 @@ class BleConnectionManager {
     _sceneListController.close();
     _scheduleListController.close();
     _syncConfigController.close();
+    _lampNameController.close();
     _otaStatusController.close();
   }
 }

@@ -258,6 +258,8 @@ Stored across power cycles:
 - Up to 16 schedules
 - PIR sensitivity level (0–31, default 24)
 - Flame config (8 parameters)
+- Sync group ID (0 = disabled, 1–255 = active group)
+- Lamp name (up to 32 bytes UTF-8, user-assigned)
 - BLE bond keys (managed automatically by NimBLE)
 
 ### 3.7 Flame Mode
@@ -463,6 +465,8 @@ toggles are active.
 | **PIR Sensitivity** | `...000B` | Read, Write | `[level: u8]` — 0 (closest) to 31 (farthest); DAC output on IO25 controls BM612 SENS pin |
 | **Flame Config** | `...000C` | Read, Write | `[drift_x: u8, drift_y: u8, restore: u8, radius: u8, bias_y: u8, flicker_depth: u8, flicker_speed: u8, brightness: u8]` — all scaled 0–255 |
 | **Device Info** | `...000D` | Read | `[fw_version: utf8]` |
+| **Sync Config** | `...000E` | Read, Write | Read: `[group_id: u8, wifi_mac: 6B]`; Write: `[group_id: u8]` — 0 disables sync, 1–255 joins group |
+| **Lamp Name** | `...000F` | Read, Write | `[name: utf8]` — up to 32 bytes; custom user-assigned name, stored in NVS |
 
 All multi-byte integers are **little-endian**.
 
@@ -572,14 +576,14 @@ disconnect it before booting with BLE.
 
 | Board | MAC (BT) | Device Name | Status |
 |---|---|---|---|
-| SN001 | c4:4f:33:11:aa:9f | SmartLamp-AA9F | Flashed (OTA), BLE + ESP-NOW working. LEDs and light sensor need PCB rework. |
-| SN002 | 30:ae:a4:07:59:d2 | SmartLamp-59D2 | Flashed (OTA), BLE + ESP-NOW working. Motion sensor verified. LEDs and light sensor need PCB rework. |
-| SmartLamp-6B68 | 30:ae:a4:07:6b:68 | SmartLamp-6B68 | Flashed, functional |
+| SN001 | c4:4f:33:11:aa:9f | SmartLamp-AA9F | Flashed (OTA), BLE + ESP-NOW working. Needs OTA to latest firmware (missing double-send fix). LEDs and light sensor need PCB rework. |
+| SN002 | 30:ae:a4:07:59:d2 | SmartLamp-59D2 | Flashed (OTA), BLE + ESP-NOW working, latest firmware. Motion sensor verified. LEDs and light sensor need PCB rework. |
+| SN003 | 30:ae:a4:07:6b:68 | SmartLamp-6B68 | Flashed (serial), latest firmware. Group sync group=1. Connected to serial for debugging. |
 
 **Verified working:** BLE advertising, BLE connection + bonding, MTU 512 negotiation,
 GATT read/write/notify, PIR motion detection, mode flags (auto/flame independent toggles),
-OTA firmware updates (BLE, Python tool + Flutter app), ESP-NOW group sync (mostly working,
-occasional stuck lamp — see §8.6), BLE re-advertising after disconnect, multi-device app switching.
+OTA firmware updates (BLE, Python tool + Flutter app), ESP-NOW group sync, lamp naming,
+BLE re-advertising after disconnect, multi-device app switching.
 
 **Not yet verified (pending PCB fixes):** LED output, ambient light sensor ADC reading.
 
@@ -596,10 +600,18 @@ brightness, colour, mode flags) to each other via ESP-NOW over WiFi channel 1.
 - Loop prevention: `s_from_sync` flag in `lamp_control.c`; `lamp_control_apply_sync()`
   applies flags + state + `s_lamp_on` atomically
 
-**Known issue:** Receiving lamp occasionally gets stuck and stops responding to sync
-messages or BLE connections. Suspected cause: `lamp_control_apply_sync()` calling
-`set_flags()` → mode transition (flame start/stop) that blocks or crashes in the WiFi
-task context (ESP-NOW receive callback). Needs serial monitor investigation.
+**Resolved issues:**
+- ESP-NOW receive callback ran in WiFi task context, calling blocking operations
+  (flame start/stop, NVS writes). Fixed by posting `SENSOR_EVT_SYNC` events to the
+  sensor queue; `lamp_control`'s control task handles sync in its own context.
+- Flame mode task race condition: rapid start/stop via sync created overlapping tasks.
+  Fixed with semaphore-based task join (`s_task_done` binary semaphore).
+- ESP-NOW broadcast unreliability with BLE coexistence: messages lost ~50% of the time.
+  Mitigated by double-send with 15 ms gap in the TX task.
+
+**Lamp naming:** Each lamp stores a user-assigned name (up to 32 bytes UTF-8) in NVS,
+readable and writable via the Lamp Name BLE characteristic (`0xAA0F`). The Flutter app
+shows the name in the control screen header and provides a rename dialog.
 
 ### 8.4 Temporary Firmware Behaviour
 

@@ -28,6 +28,7 @@ class SimulatedBleConnectionManager implements BleConnectionManager {
   final _scheduleListCtrl = StreamController<List<Schedule>>.broadcast();
   final _modeFlagsCtrl = StreamController<ModeFlags>.broadcast();
   final _syncConfigCtrl = StreamController<SyncConfig>.broadcast();
+  final _lampNameCtrl = StreamController<String>.broadcast();
   final _otaStatusCtrl = StreamController<int>.broadcast();
 
   @override
@@ -48,6 +49,8 @@ class SimulatedBleConnectionManager implements BleConnectionManager {
   String? firmwareVersion;
   @override
   SyncConfig? initialSyncConfig;
+  @override
+  String? initialLampName;
 
   SimulatedBleConnectionManager(this._bleService);
 
@@ -69,6 +72,8 @@ class SimulatedBleConnectionManager implements BleConnectionManager {
   Stream<ModeFlags> get modeFlagsStream => _modeFlagsCtrl.stream;
   @override
   Stream<SyncConfig> get syncConfigStream => _syncConfigCtrl.stream;
+  @override
+  Stream<String> get lampNameStream => _lampNameCtrl.stream;
   @override
   Stream<int> get otaStatusStream => _otaStatusCtrl.stream;
 
@@ -135,6 +140,7 @@ class SimulatedBleConnectionManager implements BleConnectionManager {
     _scheduleListCtrl.close();
     _modeFlagsCtrl.close();
     _syncConfigCtrl.close();
+    _lampNameCtrl.close();
     _otaStatusCtrl.close();
   }
 }

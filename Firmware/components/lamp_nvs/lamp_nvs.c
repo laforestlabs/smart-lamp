@@ -350,3 +350,30 @@ esp_err_t lamp_nvs_load_sync_group(uint8_t *group_id)
     }
     return ret;
 }
+
+/* ── Lamp name ── */
+
+esp_err_t lamp_nvs_save_lamp_name(const char *name)
+{
+    xSemaphoreTake(s_mutex, portMAX_DELAY);
+    nvs_handle_t h = open_nvs();
+    esp_err_t ret = nvs_set_str(h, "lamp_name", name);
+    close_nvs(h);
+    xSemaphoreGive(s_mutex);
+    return ret;
+}
+
+esp_err_t lamp_nvs_load_lamp_name(char *name, size_t max_len)
+{
+    xSemaphoreTake(s_mutex, portMAX_DELAY);
+    nvs_handle_t h = open_nvs();
+    esp_err_t ret = nvs_get_str(h, "lamp_name", name, &max_len);
+    nvs_close(h);
+    xSemaphoreGive(s_mutex);
+
+    if (ret == ESP_ERR_NVS_NOT_FOUND) {
+        name[0] = '\0';  /* empty = no custom name */
+        return ESP_OK;
+    }
+    return ret;
+}

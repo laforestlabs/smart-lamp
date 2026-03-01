@@ -211,4 +211,16 @@ class BleCodec {
   }
 
   static List<int> encodeSyncGroup(int groupId) => [groupId.clamp(0, 255)];
+
+  // ── Lamp Name ──
+
+  static String decodeLampName(List<int> bytes) {
+    if (bytes.isEmpty) return '';
+    return utf8.decode(bytes);
+  }
+
+  static List<int> encodeLampName(String name) {
+    final encoded = utf8.encode(name);
+    return encoded.length > 32 ? encoded.sublist(0, 32) : encoded;
+  }
 }

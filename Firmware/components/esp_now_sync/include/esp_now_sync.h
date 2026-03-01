@@ -3,6 +3,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "esp_err.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -11,8 +13,9 @@ extern "C" {
 /**
  * Initialise WiFi STA (no connection) + ESP-NOW.
  * Must be called after lamp_nvs_init() and before ble_init().
+ * @param sensor_queue  Queue to post SENSOR_EVT_SYNC events to.
  */
-esp_err_t esp_now_sync_init(void);
+esp_err_t esp_now_sync_init(QueueHandle_t sensor_queue);
 
 /**
  * Broadcast current lamp state to group peers.

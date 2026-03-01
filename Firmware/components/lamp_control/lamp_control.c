@@ -104,8 +104,6 @@ void lamp_control_set_flags(uint8_t flags)
     }
     if (old_flame && !new_flame) {
         flame_mode_stop();
-        /* Give flame task time to self-delete */
-        vTaskDelay(pdMS_TO_TICKS(100));
     }
 
     /* Start what is now needed */
@@ -248,6 +246,16 @@ static void control_task(void *arg)
             case SENSOR_EVT_TOUCH_LONG:
                 ESP_LOGI(TAG, "Touch: long press → start advertising");
                 ble_start_advertising();
+                break;
+
+            case SENSOR_EVT_SYNC:
+                ESP_LOGI(TAG, "Sync RX: [%d,%d,%d,%d] flags=0x%02x",
+                         evt.data.sync.warm, evt.data.sync.neutral,
+                         evt.data.sync.cool, evt.data.sync.master,
+                         evt.data.sync.flags);
+                lamp_control_apply_sync(evt.data.sync.warm, evt.data.sync.neutral,
+                                        evt.data.sync.cool, evt.data.sync.master,
+                                        evt.data.sync.flags);
                 break;
 
             case SENSOR_EVT_MOTION_START:
