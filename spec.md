@@ -487,7 +487,8 @@ Lamp enters ADVERTISING MODE                                       │
   • LED pulses slowly (breathing effect)                           │
   • Broadcasts connectable undirected advertisement                │
   • Device name: "SmartLamp-XXXX" (last 4 hex of MAC)             │
-  • Advertising times out after 60 s if no connection             │
+  • Advertising times out after 60 s if no connection (pairing mode)
+  • Normal boot: advertises indefinitely (temporary — see §8.4)             │
         │                                                          │
         └─────────────────► App shows discovered lamp in list      │
                                                                    │
@@ -503,10 +504,13 @@ App reads Device Info, LED State, Mode, Scene List, Schedule List │
 UI transitions to main control screen                             │
 
 [Subsequent sessions]
-App auto-connects to the first bonded lamp on launch and navigates directly
-to the control screen once connected. Lamp only advertises on touch-pad long
-press; it does not broadcast continuously when idle (saves power).
-(Temporary: lamp always advertises on boot — see §8.4.)
+App auto-connects to the most recently used bonded lamp on launch (sorted by
+last-connected timestamp) and navigates directly to the control screen once
+connected. If that lamp is unreachable (10 s timeout), the app tries the next
+bonded lamp, and so on. Manual tap overrides auto-connect.
+Lamp only advertises on touch-pad long press; it does not broadcast
+continuously when idle (saves power).
+(Temporary: lamp always advertises on boot with no timeout — see §8.4.)
 ```
 
 ---
@@ -580,10 +584,11 @@ disconnect it before booting with BLE.
 | SN002 | 30:ae:a4:07:59:d2 | SmartLamp-59D2 | Flashed (OTA), BLE + ESP-NOW working, latest firmware. Motion sensor verified. LEDs and light sensor need PCB rework. |
 | SN003 | 30:ae:a4:07:6b:68 | SmartLamp-6B68 | Flashed (serial), latest firmware. Group sync group=1. Connected to serial for debugging. |
 
-**Verified working:** BLE advertising, BLE connection + bonding, MTU 512 negotiation,
-GATT read/write/notify, PIR motion detection, mode flags (auto/flame independent toggles),
-OTA firmware updates (BLE, Python tool + Flutter app), ESP-NOW group sync, lamp naming,
-BLE re-advertising after disconnect, multi-device app switching.
+**Verified working:** BLE advertising (indefinite), BLE connection + bonding, MTU 512,
+GATT read/write/notify, Service Changed indication, PIR motion detection,
+mode flags (auto/flame independent toggles), OTA firmware updates (BLE, Python tool +
+Flutter app), ESP-NOW group sync, lamp naming, BLE re-advertising after disconnect,
+multi-device app switching, auto-reconnect with fallback.
 
 **Not yet verified (pending PCB fixes):** LED output, ambient light sensor ADC reading.
 
@@ -615,10 +620,14 @@ shows the name in the control screen header and provides a rename dialog.
 
 ### 8.4 Temporary Firmware Behaviour
 
-- **Always advertise on boot:** The lamp starts BLE advertising automatically on every
-  power-up, regardless of existing bonds. This is a temporary measure because the touch
-  button hardware is not yet functional. Revert to bond-count check + touch long-press
-  once the AT42QT1010 circuit is verified.
+- **Always advertise on boot (no timeout):** The lamp starts BLE advertising automatically
+  on every power-up with no timeout (`BLE_HS_FOREVER`), regardless of existing bonds.
+  This is a temporary measure because the touch button hardware is not yet functional.
+  Revert to bond-count check + touch long-press once the AT42QT1010 circuit is verified.
+- **Service Changed indication:** On every BLE connect, the firmware sends a Service
+  Changed indication (`ble_svc_gatt_changed(0x0001, 0xFFFF)`) to invalidate the Android
+  GATT cache. This ensures new characteristics are discovered after firmware updates
+  without requiring the user to re-pair.
 
 ### 8.5 Build & Deploy Procedures
 

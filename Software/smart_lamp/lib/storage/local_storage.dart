@@ -31,4 +31,12 @@ class LocalStorage {
     lamps.removeWhere((l) => l.deviceId == deviceId);
     await _prefs.setString(_key, jsonEncode(lamps.map((l) => l.toJson()).toList()));
   }
+
+  Future<void> updateLastConnected(String deviceId) async {
+    final lamps = getBondedLamps();
+    final idx = lamps.indexWhere((l) => l.deviceId == deviceId);
+    if (idx < 0) return;
+    lamps[idx] = lamps[idx].copyWith(lastConnected: DateTime.now());
+    await _prefs.setString(_key, jsonEncode(lamps.map((l) => l.toJson()).toList()));
+  }
 }

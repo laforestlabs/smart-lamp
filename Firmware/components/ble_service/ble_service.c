@@ -13,11 +13,12 @@
 #include "host/ble_hs.h"
 #include "host/util/util.h"
 #include "services/gap/ble_svc_gap.h"
+#include "services/gatt/ble_svc_gatt.h"
 #include "store/config/ble_store_config.h"
 
 static const char *TAG = "ble_svc";
 
-#define ADV_TIMEOUT_MS  180000  /* 3 min advertising timeout */
+#define ADV_TIMEOUT_MS  BLE_HS_FOREVER  /* advertise indefinitely (temporary: no touch button yet) */
 
 static uint16_t s_conn_handle;
 static bool     s_connected = false;
@@ -85,6 +86,12 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg)
             s_conn_handle = event->connect.conn_handle;
             s_connected = true;
             ESP_LOGI(TAG, "Client connected (handle=%u)", s_conn_handle);
+
+            /* Tell the client to re-discover services in case the GATT table
+             * changed since last connection (e.g. after a firmware update).
+             * This invalidates the Android GATT cache so new characteristics
+             * are discovered correctly. Harmless if nothing changed. */
+            ble_svc_gatt_changed(0x0001, 0xFFFF);
 
             /* Request MTU upgrade to 512 */
             ble_att_set_preferred_mtu(512);
@@ -154,8 +161,7 @@ void ble_start_advertising(void)
                                ADV_TIMEOUT_MS,  /* duration in ms */
                                &adv_params, gap_event_handler, NULL);
     if (rc == 0) {
-        ESP_LOGI(TAG, "Advertising started as '%s' (timeout=%ds)",
-                 s_device_name, ADV_TIMEOUT_MS / 1000);
+        ESP_LOGI(TAG, "Advertising started as '%s' (no timeout)", s_device_name);
     } else {
         ESP_LOGE(TAG, "Advertising start failed: %d", rc);
     }

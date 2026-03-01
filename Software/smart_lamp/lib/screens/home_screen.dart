@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../ble/ble_connection_manager.dart';
+import '../models/bonded_lamp.dart';
 import '../providers/ble_provider.dart';
 import '../providers/device_list_provider.dart';
 import '../widgets/lamp_card.dart';
@@ -15,24 +16,44 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
-  bool _autoConnectAttempted = false;
+  bool _autoConnecting = false;
+  int _autoConnectIndex = 0;
+  List<BondedLamp> _autoConnectOrder = [];
 
   @override
   void initState() {
     super.initState();
-    // Auto-connect on next frame so providers are ready
     WidgetsBinding.instance.addPostFrameCallback((_) => _tryAutoConnect());
   }
 
   void _tryAutoConnect() {
-    if (_autoConnectAttempted) return;
-    _autoConnectAttempted = true;
-
     final lamps = ref.read(deviceListProvider);
     final connManager = ref.read(connectionManagerProvider);
-    if (lamps.isNotEmpty && connManager.deviceId == null) {
-      connManager.connect(lamps.first.deviceId);
+    if (lamps.isEmpty || connManager.deviceId != null) return;
+
+    // Sort by lastConnected descending (most recent first, nulls last)
+    _autoConnectOrder = List.of(lamps)
+      ..sort((a, b) {
+        if (a.lastConnected == null && b.lastConnected == null) return 0;
+        if (a.lastConnected == null) return 1;
+        if (b.lastConnected == null) return -1;
+        return b.lastConnected!.compareTo(a.lastConnected!);
+      });
+
+    _autoConnectIndex = 0;
+    _autoConnecting = true;
+    connManager.connect(_autoConnectOrder[0].deviceId);
+  }
+
+  void _onAutoConnectFailed() {
+    if (!_autoConnecting) return;
+    _autoConnectIndex++;
+    if (_autoConnectIndex >= _autoConnectOrder.length) {
+      _autoConnecting = false;
+      return;
     }
+    final connManager = ref.read(connectionManagerProvider);
+    connManager.connect(_autoConnectOrder[_autoConnectIndex].deviceId);
   }
 
   @override
@@ -42,15 +63,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final connState = ref.watch(connectionStateProvider);
     final connManager = ref.read(connectionManagerProvider);
 
-    // Auto-navigate to control screen once connected
     ref.listen<AsyncValue<LampConnectionState>>(connectionStateProvider,
         (prev, next) {
       final prevState = prev?.valueOrNull;
       final nextState = next.valueOrNull;
-      if (prevState != LampConnectionState.connected &&
-          nextState == LampConnectionState.connected &&
+
+      if (nextState == LampConnectionState.connected &&
           connManager.deviceId != null) {
-        context.push('/control/${connManager.deviceId}');
+        // Record last-connected timestamp
+        ref
+            .read(deviceListProvider.notifier)
+            .updateLastConnected(connManager.deviceId!);
+        _autoConnecting = false;
+
+        // Auto-navigate to control screen
+        if (prevState != LampConnectionState.connected) {
+          context.push('/control/${connManager.deviceId}');
+        }
+      } else if (prevState == LampConnectionState.connecting &&
+          nextState == LampConnectionState.disconnected &&
+          _autoConnecting) {
+        // Connection failed during auto-connect — try next lamp
+        _onAutoConnectFailed();
       }
     });
 
@@ -107,6 +141,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   lamp: lamp,
                   connectionState: currentState,
                   onTap: () {
+                    _autoConnecting = false; // Cancel auto-connect on manual tap
                     if (currentState == LampConnectionState.connected) {
                       context.push('/control/${lamp.deviceId}');
                     } else {
