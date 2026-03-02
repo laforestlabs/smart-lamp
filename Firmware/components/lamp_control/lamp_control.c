@@ -34,6 +34,7 @@ static void auto_transition_handler(auto_transition_t transition, uint8_t dim_ma
 {
     switch (transition) {
     case AUTO_TRANSITION_ON:
+        s_lamp_on = true;
         if (s_flags & MODE_FLAG_FLAME) {
             flame_mode_set_color(s_active_scene.warm, s_active_scene.neutral,
                                  s_active_scene.cool);
@@ -58,6 +59,7 @@ static void auto_transition_handler(auto_transition_t transition, uint8_t dim_ma
         break;
 
     case AUTO_TRANSITION_OFF:
+        s_lamp_on = false;
         if (s_flags & MODE_FLAG_FLAME) {
             flame_mode_stop();
         }
@@ -169,11 +171,20 @@ void lamp_control_set_state(uint8_t warm, uint8_t neutral, uint8_t cool, uint8_t
             flame_mode_start();
             s_lamp_on = true;
         }
-    } else if (!(s_flags & MODE_FLAG_AUTO)) {
+    } else if (s_flags & MODE_FLAG_AUTO) {
+        /* Auto-only mode: honour explicit on/off immediately */
+        if (master == 0) {
+            lamp_off();
+            s_lamp_on = false;
+        } else if (!s_lamp_on) {
+            apply_manual_scene();
+            s_lamp_on = true;
+        }
+        /* else: lamp already on, scene saved — auto mode manages brightness */
+    } else {
         /* Manual mode: apply directly */
         apply_manual_scene();
     }
-    /* Auto mode: state saved for next ON transition */
 
     /* Broadcast to sync group (only for local changes) */
     if (!s_from_sync) {

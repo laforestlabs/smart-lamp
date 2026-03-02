@@ -236,8 +236,16 @@ bitmask). Either or both can be enabled simultaneously:
 - **Neither (manual):** user controls brightness and colour directly from the app.
 
 Manual brightness/colour changes from the app override the current scene without
-disabling auto or flame mode. The on/off button is always available and can override
-auto mode.
+disabling auto or flame mode. The on/off button is always available in all modes:
+
+- **Manual:** applies scene directly.
+- **Flame only:** master=0 stops the flame task and calls `lamp_off()`; master>0 restarts
+  it.
+- **Auto only:** master=0 calls `lamp_off()` immediately and tracks `s_lamp_on=false`
+  (auto mode remains armed — motion will re-activate it); master>0 applies the scene
+  immediately if the lamp is currently off. `s_lamp_on` is also updated when auto mode
+  turns the lamp off autonomously (timeout → IDLE) so the button state stays in sync.
+- **Both:** flame handles on/off; auto mode controls when the flame runs.
 
 ### 3.5 BLE GATT Server
 
@@ -369,7 +377,8 @@ See §6 for full detail. Summary:
 
 - **ON/OFF button** — prominent toggle at the top; sets master brightness to 0 (off) or
   128 (on). Amber when on, grey when off. Works in all modes: in flame mode it
-  stops/starts the flame task; in auto mode it disables/enables motion detection.
+  stops/starts the flame task; in auto mode it immediately turns the LEDs off/on while
+  keeping auto mode armed (motion will still re-activate the lamp when master=0).
 - Three sliders: **Warm**, **Neutral**, **Cool** (0–100 %).
 - One master **Brightness** slider (scales all channels).
 - Real-time preview: changes write immediately to the LED State characteristic.
@@ -576,12 +585,12 @@ disconnect it before booting with BLE.
 - **Do not** modify `esp_phy/src/phy_init.c` to change the fallback calibration mode —
   the default (`PHY_RF_CAL_FULL` when no stored data exists) is correct.
 
-### 8.3 Board Status (as of 2026-02-28)
+### 8.3 Board Status (as of 2026-03-02)
 
 | Board | MAC (BT) | Device Name | Status |
 |---|---|---|---|
-| SN001 | c4:4f:33:11:aa:9f | SmartLamp-AA9F | Flashed (OTA), BLE + ESP-NOW working. Needs OTA to latest firmware (missing double-send fix). LEDs and light sensor need PCB rework. |
-| SN002 | 30:ae:a4:07:59:d2 | SmartLamp-59D2 | Flashed (OTA), BLE + ESP-NOW working, latest firmware. Motion sensor verified. LEDs and light sensor need PCB rework. |
+| SN001 | c4:4f:33:11:aa:9f | SmartLamp-AA9F | Flashed (OTA), BLE + ESP-NOW working. Needs OTA to latest firmware. LEDs and light sensor need PCB rework. |
+| SN002 | 30:ae:a4:07:59:d2 | SmartLamp-59D2 | Flashed (OTA), BLE + ESP-NOW working, latest firmware (auto-mode on/off fix). Motion sensor verified. LEDs and light sensor need PCB rework. |
 | SN003 | 30:ae:a4:07:6b:68 | SmartLamp-6B68 | Flashed (serial), latest firmware. Group sync group=1. Connected to serial for debugging. |
 
 **Verified working:** BLE advertising (indefinite), BLE connection + bonding, MTU 512,
