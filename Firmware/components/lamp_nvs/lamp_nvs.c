@@ -147,6 +147,26 @@ esp_err_t lamp_nvs_load_auto_config(auto_config_t *cfg)
         cfg->lux_threshold = 50;
         return ESP_OK;
     }
+    if (ret == ESP_ERR_NVS_INVALID_LENGTH) {
+        /* Old blob (7 bytes) is larger than new struct (4 bytes).
+         * Re-read into a scratch buffer and copy the fields that
+         * survived (timeout_s and lux_threshold are at offset 0-3,
+         * unchanged). */
+        uint8_t tmp[16] = {0};
+        size_t tmp_len = (len < sizeof(tmp)) ? len : sizeof(tmp);
+        xSemaphoreTake(s_mutex, portMAX_DELAY);
+        nvs_handle_t h2 = open_nvs();
+        ret = nvs_get_blob(h2, "auto_cfg", tmp, &tmp_len);
+        nvs_close(h2);
+        xSemaphoreGive(s_mutex);
+        if (ret == ESP_OK && tmp_len >= 4) {
+            memcpy(cfg, tmp, 4);
+        } else {
+            cfg->timeout_s     = 300;
+            cfg->lux_threshold = 50;
+        }
+        return ESP_OK;
+    }
     return ret;
 }
 
