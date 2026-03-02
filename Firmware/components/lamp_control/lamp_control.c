@@ -41,10 +41,11 @@ static void auto_transition_handler(auto_transition_t transition, uint8_t dim_ma
             if (!flame_mode_is_active()) {
                 flame_mode_start();
             }
-            flame_mode_set_master_override(255);
+            /* dim_master=0 at fade-in start, full value when fade completes or instant */
+            flame_mode_set_master_override(dim_master);
         } else {
             lamp_fill(s_active_scene.warm, s_active_scene.neutral, s_active_scene.cool);
-            lamp_set_master(s_active_scene.master);
+            lamp_set_master(dim_master);
             lamp_flush();
         }
         break;
@@ -134,6 +135,9 @@ void lamp_control_apply_scene(const scene_t *scene)
 {
     s_active_scene = *scene;
     lamp_nvs_save_active_scene(scene);
+
+    /* Update auto-mode fade rates from scene */
+    auto_mode_set_fade_rates(scene->fade_in_s, scene->fade_out_s);
 
     /* Restore mode flags stored with the scene */
     lamp_control_set_flags(scene->mode_flags);
@@ -304,6 +308,7 @@ esp_err_t lamp_control_init(QueueHandle_t sensor_queue)
     /* Initialise sub-modules */
     auto_mode_init();
     auto_mode_set_transition_cb(auto_transition_handler);
+    auto_mode_set_fade_rates(s_active_scene.fade_in_s, s_active_scene.fade_out_s);
 
     /* Apply saved flags */
     s_lamp_on = true;

@@ -11,23 +11,24 @@ extern "C" {
 
 typedef enum {
     AUTO_STATE_IDLE,
+    AUTO_STATE_FADING_IN,
     AUTO_STATE_ON,
-    AUTO_STATE_DIMMING,
+    AUTO_STATE_FADING_OUT,
 } auto_state_t;
 
 /**
  * Auto mode transition types, used in the transition callback.
  */
 typedef enum {
-    AUTO_TRANSITION_ON,
-    AUTO_TRANSITION_DIMMING,
-    AUTO_TRANSITION_OFF,
+    AUTO_TRANSITION_ON,       /* fade-in starting (dim_master = initial brightness) or instant ON */
+    AUTO_TRANSITION_DIMMING,  /* smooth fade tick — set LED master to dim_master */
+    AUTO_TRANSITION_OFF,      /* fade-out complete; turn off LEDs */
 } auto_transition_t;
 
 /**
  * Callback invoked on auto mode state transitions.
  * @param transition  The transition type.
- * @param dim_master  Dimmed master brightness (only meaningful for DIMMING).
+ * @param dim_master  Brightness value: initial master for ON, current for DIMMING, ignored for OFF.
  */
 typedef void (*auto_mode_transition_cb_t)(auto_transition_t transition,
                                           uint8_t dim_master);
@@ -48,7 +49,7 @@ esp_err_t auto_mode_init(void);
 void auto_mode_enable(void);
 
 /**
- * Disable auto mode — stops the state machine, does NOT change LEDs.
+ * Disable auto mode — stops the state machine and any active fade, does NOT change LEDs.
  */
 void auto_mode_disable(void);
 
@@ -72,6 +73,13 @@ esp_err_t auto_mode_set_config(const auto_config_t *cfg);
  * Get current config.
  */
 void auto_mode_get_config(auto_config_t *cfg);
+
+/**
+ * Set per-scene fade rates (call whenever the active scene changes).
+ * @param fade_in_s   Seconds to fade from off to full brightness (0 = instant).
+ * @param fade_out_s  Seconds to fade from full brightness to off (0 = instant).
+ */
+void auto_mode_set_fade_rates(uint8_t fade_in_s, uint8_t fade_out_s);
 
 #ifdef __cplusplus
 }

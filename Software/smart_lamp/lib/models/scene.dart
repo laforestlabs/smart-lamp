@@ -6,6 +6,8 @@ class Scene {
   final int cool;
   final int master;
   final int modeFlags;
+  final int fadeInSeconds;
+  final int fadeOutSeconds;
 
   const Scene({
     required this.index,
@@ -15,6 +17,8 @@ class Scene {
     this.cool = 0,
     this.master = 128,
     this.modeFlags = 0,
+    this.fadeInSeconds = 3,
+    this.fadeOutSeconds = 10,
   });
 
   Scene copyWith({
@@ -25,6 +29,8 @@ class Scene {
     int? cool,
     int? master,
     int? modeFlags,
+    int? fadeInSeconds,
+    int? fadeOutSeconds,
   }) {
     return Scene(
       index: index ?? this.index,
@@ -34,6 +40,8 @@ class Scene {
       cool: cool ?? this.cool,
       master: master ?? this.master,
       modeFlags: modeFlags ?? this.modeFlags,
+      fadeInSeconds: fadeInSeconds ?? this.fadeInSeconds,
+      fadeOutSeconds: fadeOutSeconds ?? this.fadeOutSeconds,
     );
   }
 

@@ -231,8 +231,8 @@ bitmask). Either or both can be enabled simultaneously:
 - **Flame only:** animated candle-flame effect runs continuously at the configured
   brightness.
 - **Both enabled:** auto mode controls motion-based on/off timing, flame mode provides
-  the animated visual output. On motion → flame starts; on dim → flame master reduced;
-  on idle timeout → flame stops and LEDs turn off.
+  the animated visual output. On motion → flame fades in; on idle timeout → flame fades
+  out and stops.
 - **Neither (manual):** user controls brightness and colour directly from the app.
 
 Manual brightness/colour changes from the app override the current scene without
@@ -244,8 +244,13 @@ disabling auto or flame mode. The on/off button is always available in all modes
 - **Auto only:** master=0 calls `lamp_off()` immediately and tracks `s_lamp_on=false`
   (auto mode remains armed — motion will re-activate it); master>0 applies the scene
   immediately if the lamp is currently off. `s_lamp_on` is also updated when auto mode
-  turns the lamp off autonomously (timeout → IDLE) so the button state stays in sync.
+  turns the lamp off autonomously so the button state stays in sync.
 - **Both:** flame handles on/off; auto mode controls when the flame runs.
+
+Auto mode turn-off is a **smooth fade** rather than an instant off or a dim-then-off
+step. Fade durations are stored per-scene (`fade_in_s`, `fade_out_s`). If motion is
+detected during a fade-out, the fade immediately reverses into a fade-in at the same
+rate.
 
 ### 3.5 BLE GATT Server
 
@@ -400,9 +405,10 @@ toggles are active.
 - Settings panel (accessible via a card when auto is enabled):
   - **Motion sensitivity** — PIR detection range, 0 (closest) to 31 (farthest), default 24
   - **Lux threshold** — don't activate if room is brighter than this (default: 50 lux)
-  - **Timeout** — seconds of no motion before dimming begins (default: 300 s)
-  - **Dim level** — brightness during the dim-warning phase (default: 30 %)
-  - **Dim duration** — seconds in dim state before full off (default: 30 s)
+  - **Timeout** — seconds of no motion before fade-out begins (default: 300 s)
+- **Fade rates are per-scene**, set in the Save Scene dialog:
+  - **Fade In** — seconds to fade from off to full brightness on motion activation (default: 3 s, 0 = instant)
+  - **Fade Out** — seconds to fade from full brightness to off after inactivity timeout (default: 10 s, 0 = instant)
 
 ### 4.4 Scenes & Presets
 
@@ -463,9 +469,9 @@ toggles are active.
 |---|---|---|---|
 | **LED State** | `...0001` | Read, Write, Notify | `[warm: u8, neutral: u8, cool: u8, master: u8]` |
 | **Mode** | `...0002` | Read, Write | `[flags: u8]` — bitmask: bit 0 (`0x01`) = auto enabled, bit 1 (`0x02`) = flame enabled. `0x00`=manual, `0x01`=auto, `0x02`=flame, `0x03`=both |
-| **Auto Config** | `...0003` | Read, Write | `[timeout_s: u16 LE, lux_threshold: u16 LE, dim_pct: u8, dim_duration_s: u16 LE]` |
-| **Scene Write** | `...0004` | Write | `[index: u8, name_len: u8, name: utf8[name_len], warm: u8, neutral: u8, cool: u8, master: u8, mode_flags: u8]` — mode_flags optional (default 0) |
-| **Scene List** | `...0005` | Read, Notify | Length-prefixed list of scenes; same struct as Scene Write (includes mode_flags) |
+| **Auto Config** | `...0003` | Read, Write | `[timeout_s: u16 LE, lux_threshold: u16 LE]` |
+| **Scene Write** | `...0004` | Write | `[index: u8, name_len: u8, name: utf8[name_len], warm: u8, neutral: u8, cool: u8, master: u8, mode_flags: u8, fade_in_s: u8, fade_out_s: u8]` — trailing bytes optional (defaults: mode_flags=0, fade_in_s=3, fade_out_s=10) |
+| **Scene List** | `...0005` | Read, Notify | Length-prefixed list of scenes; same struct as Scene Write |
 | **Schedule Write** | `...0006` | Write | `[index: u8, day_mask: u8, hour: u8, minute: u8, scene_index: u8, enabled: u8]` |
 | **Schedule List** | `...0007` | Read, Notify | Length-prefixed list of schedules |
 | **Sensor Data** | `...0008` | Read, Notify | `[lux: u16 LE, motion: u8]` — notified every 1 s (lux update) and on motion start/end |
@@ -531,33 +537,47 @@ continuously when idle (saves power).
         │                        IDLE                              │
         │                   (LEDs off)                             │
         └──────────────┬───────────────────────────────────────────┘
-                       │ motion detected
-                       │ AND lux < threshold
+                       │ motion detected AND lux < threshold
+                       ▼
+        ┌──────────────────────────────────────────────────────────┐
+        │                     FADING_IN                            │
+        │   (master linearly 0 → scene.master over fade_in_s)     │
+        └──────────────┬───────────────────────────────────────────┘
+                       │ fade complete
                        ▼
         ┌──────────────────────────────────────────────────────────┐
         │                         ON                               │
         │           (active scene, full brightness)                │
         └──────────────┬───────────────────────────────────────────┘
-                       │ no motion for [timeout] seconds
+                       │ no motion for [timeout_s] seconds
                        ▼
         ┌──────────────────────────────────────────────────────────┐
-        │                      DIMMING                             │
-        │        (brightness reduced to dim_pct %)                 │
+        │                    FADING_OUT                            │
+        │   (master linearly scene.master → 0 over fade_out_s)    │
         └────────┬─────────────────────────┬────────────────────────┘
-                 │ motion detected          │ [dim_duration] seconds
-                 │                          │ elapsed
-                 ▼                          ▼
-               ON                        IDLE
+                 │ motion detected          │ fade complete
+                 │ (reverse to FADING_IN    │
+                 │  from current master)    ▼
+                 ▼                        IDLE
+            FADING_IN
 ```
 
-**Configurable parameters** (stored in NVS, settable from app):
+Fade ticks fire every 50 ms via `esp_timer`. If `fade_in_s` or `fade_out_s` is 0,
+the corresponding transition is instant (no timer).
+
+**Global parameters** (stored in NVS, settable from app — Auto Config characteristic):
 
 | Parameter | Default | Description |
 |---|---|---|
 | `lux_threshold` | 50 lux | Suppress activation above this ambient brightness |
-| `timeout_s` | 300 s | No-motion period before entering DIMMING |
-| `dim_pct` | 30 % | Master brightness during DIMMING phase |
-| `dim_duration_s` | 30 s | Time in DIMMING before going to IDLE |
+| `timeout_s` | 300 s | No-motion period before starting FADING_OUT |
+
+**Per-scene parameters** (stored in scene, set in Save Scene dialog):
+
+| Parameter | Default | Description |
+|---|---|---|
+| `fade_in_s` | 3 s | Seconds to fade from off to full brightness on activation (0 = instant) |
+| `fade_out_s` | 10 s | Seconds to fade from full brightness to off after timeout (0 = instant) |
 
 ---
 

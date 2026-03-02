@@ -29,16 +29,6 @@ class AutoConfigNotifier extends StateNotifier<AutoConfig> {
     _debouncedWrite();
   }
 
-  void setDimPercent(int value) {
-    state = state.copyWith(dimPercent: value);
-    _debouncedWrite();
-  }
-
-  void setDimDurationSeconds(int value) {
-    state = state.copyWith(dimDurationSeconds: value);
-    _debouncedWrite();
-  }
-
   void _debouncedWrite() {
     _debouncer.call(() => _writeNow());
   }

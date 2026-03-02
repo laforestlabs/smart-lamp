@@ -40,22 +40,18 @@ class BleCodec {
   // ── Auto Config ──
 
   static AutoConfig decodeAutoConfig(List<int> bytes) {
-    if (bytes.length < 7) return const AutoConfig();
+    if (bytes.length < 4) return const AutoConfig();
     final bd = ByteData.sublistView(Uint8List.fromList(bytes));
     return AutoConfig(
       timeoutSeconds: bd.getUint16(0, Endian.little),
       luxThreshold: bd.getUint16(2, Endian.little),
-      dimPercent: bytes[4],
-      dimDurationSeconds: bd.getUint16(5, Endian.little),
     );
   }
 
   static List<int> encodeAutoConfig(AutoConfig cfg) {
-    final bd = ByteData(7);
+    final bd = ByteData(4);
     bd.setUint16(0, cfg.timeoutSeconds, Endian.little);
     bd.setUint16(2, cfg.luxThreshold, Endian.little);
-    bd.setUint8(4, cfg.dimPercent);
-    bd.setUint16(5, cfg.dimDurationSeconds, Endian.little);
     return bd.buffer.asUint8List().toList();
   }
 
@@ -73,6 +69,8 @@ class BleCodec {
       scene.cool,
       scene.master,
       scene.modeFlags,
+      scene.fadeInSeconds.clamp(0, 255),
+      scene.fadeOutSeconds.clamp(0, 255),
     ];
   }
 
@@ -95,6 +93,8 @@ class BleCodec {
       final cool = bytes[offset++];
       final master = bytes[offset++];
       final modeFlags = (offset < bytes.length) ? bytes[offset++] : 0;
+      final fadeIn = (offset < bytes.length) ? bytes[offset++] : 3;
+      final fadeOut = (offset < bytes.length) ? bytes[offset++] : 10;
       scenes.add(Scene(
         index: index,
         name: name,
@@ -103,6 +103,8 @@ class BleCodec {
         cool: cool,
         master: master,
         modeFlags: modeFlags,
+        fadeInSeconds: fadeIn,
+        fadeOutSeconds: fadeOut,
       ));
     }
     return scenes;

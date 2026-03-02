@@ -64,10 +64,20 @@ esp_err_t lamp_nvs_save_active_scene(const scene_t *scene)
 esp_err_t lamp_nvs_load_active_scene(scene_t *scene)
 {
     memset(scene, 0, sizeof(*scene));
+    scene->fade_in_s  = FADE_IN_S_DEFAULT;
+    scene->fade_out_s = FADE_OUT_S_DEFAULT;
+
     xSemaphoreTake(s_mutex, portMAX_DELAY);
     nvs_handle_t h = open_nvs();
     size_t len = sizeof(scene_t);
     esp_err_t ret = nvs_get_blob(h, "active", scene, &len);
+
+    if (ret == ESP_ERR_NVS_INVALID_LENGTH) {
+        /* Old format (smaller blob) — re-read with actual stored size;
+         * fade fields remain at defaults set above */
+        ret = nvs_get_blob(h, "active", scene, &len);
+    }
+
     nvs_close(h);
     xSemaphoreGive(s_mutex);
 
@@ -75,10 +85,12 @@ esp_err_t lamp_nvs_load_active_scene(scene_t *scene)
         /* Default: warm white at 50% */
         memset(scene, 0, sizeof(*scene));
         strncpy(scene->name, "Default", SCENE_NAME_MAX);
-        scene->warm   = 200;
-        scene->neutral = 80;
-        scene->cool   = 0;
-        scene->master = 128;
+        scene->warm      = 200;
+        scene->neutral   = 80;
+        scene->cool      = 0;
+        scene->master    = 128;
+        scene->fade_in_s  = FADE_IN_S_DEFAULT;
+        scene->fade_out_s = FADE_OUT_S_DEFAULT;
         return ESP_OK;
     }
     return ret;
@@ -131,10 +143,8 @@ esp_err_t lamp_nvs_load_auto_config(auto_config_t *cfg)
     xSemaphoreGive(s_mutex);
 
     if (ret == ESP_ERR_NVS_NOT_FOUND) {
-        cfg->timeout_s      = 300;
-        cfg->lux_threshold  = 50;
-        cfg->dim_pct        = 30;
-        cfg->dim_duration_s = 30;
+        cfg->timeout_s     = 300;
+        cfg->lux_threshold = 50;
         return ESP_OK;
     }
     return ret;
@@ -165,10 +175,20 @@ esp_err_t lamp_nvs_load_scene(uint8_t index, scene_t *scene)
     make_key(key, "scene", index);
 
     memset(scene, 0, sizeof(*scene));
+    scene->fade_in_s  = FADE_IN_S_DEFAULT;
+    scene->fade_out_s = FADE_OUT_S_DEFAULT;
+
     xSemaphoreTake(s_mutex, portMAX_DELAY);
     nvs_handle_t h = open_nvs();
     size_t len = sizeof(scene_t);
     esp_err_t ret = nvs_get_blob(h, key, scene, &len);
+
+    if (ret == ESP_ERR_NVS_INVALID_LENGTH) {
+        /* Old format (smaller blob) — re-read with actual stored size;
+         * fade fields remain at defaults set above */
+        ret = nvs_get_blob(h, key, scene, &len);
+    }
+
     nvs_close(h);
     xSemaphoreGive(s_mutex);
     return ret;

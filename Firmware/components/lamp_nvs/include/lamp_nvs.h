@@ -13,6 +13,10 @@ extern "C" {
 #define SCENE_MAX       16
 #define SCHEDULE_MAX    16
 
+/* Default fade durations (seconds) for new scenes and NVS migration */
+#define FADE_IN_S_DEFAULT   3
+#define FADE_OUT_S_DEFAULT  10
+
 typedef struct {
     char    name[SCENE_NAME_MAX + 1];
     uint8_t warm;
@@ -20,13 +24,13 @@ typedef struct {
     uint8_t cool;
     uint8_t master;
     uint8_t mode_flags;
+    uint8_t fade_in_s;   /* seconds to fade from off to full brightness (auto mode) */
+    uint8_t fade_out_s;  /* seconds to fade from full brightness to off (auto mode) */
 } scene_t;
 
 typedef struct {
     uint16_t timeout_s;
     uint16_t lux_threshold;
-    uint8_t  dim_pct;
-    uint16_t dim_duration_s;
 } auto_config_t;
 
 typedef struct {

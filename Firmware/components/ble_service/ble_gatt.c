@@ -87,7 +87,7 @@ static int mode_access(uint16_t conn_handle, uint16_t attr_handle,
     return BLE_ATT_ERR_UNLIKELY;
 }
 
-/* ── Auto Config (0003): R/W — [timeout_s:u16, lux_threshold:u16, dim_pct:u8, dim_duration_s:u16] ── */
+/* ── Auto Config (0003): R/W — [timeout_s:u16LE, lux_threshold:u16LE] ── */
 
 static int auto_config_access(uint16_t conn_handle, uint16_t attr_handle,
                               struct ble_gatt_access_ctxt *ctxt, void *arg)
@@ -95,27 +95,23 @@ static int auto_config_access(uint16_t conn_handle, uint16_t attr_handle,
     if (ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR) {
         auto_config_t cfg;
         lamp_nvs_load_auto_config(&cfg);
-        uint8_t buf[7];
+        uint8_t buf[4];
         memcpy(&buf[0], &cfg.timeout_s, 2);
         memcpy(&buf[2], &cfg.lux_threshold, 2);
-        buf[4] = cfg.dim_pct;
-        memcpy(&buf[5], &cfg.dim_duration_s, 2);
         os_mbuf_append(ctxt->om, buf, sizeof(buf));
         return 0;
     }
 
     if (ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR) {
         uint16_t len = OS_MBUF_PKTLEN(ctxt->om);
-        if (len < 7) return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+        if (len < 4) return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
 
-        uint8_t buf[7];
-        os_mbuf_copydata(ctxt->om, 0, 7, buf);
+        uint8_t buf[4];
+        os_mbuf_copydata(ctxt->om, 0, 4, buf);
 
         auto_config_t cfg;
         memcpy(&cfg.timeout_s, &buf[0], 2);
         memcpy(&cfg.lux_threshold, &buf[2], 2);
-        cfg.dim_pct = buf[4];
-        memcpy(&cfg.dim_duration_s, &buf[5], 2);
         lamp_nvs_save_auto_config(&cfg);
 
         /* Live-update if auto mode is active */
@@ -156,6 +152,17 @@ static int scene_write_access(uint16_t conn_handle, uint16_t attr_handle,
     if (copy_len >= 2 + name_len + 5) {
         scene.mode_flags = buf[2 + name_len + 4] & MODE_FLAGS_MASK;
     }
+    /* Optional fade_in_s and fade_out_s bytes */
+    if (copy_len >= 2 + name_len + 6) {
+        scene.fade_in_s = buf[2 + name_len + 5];
+    } else {
+        scene.fade_in_s = FADE_IN_S_DEFAULT;
+    }
+    if (copy_len >= 2 + name_len + 7) {
+        scene.fade_out_s = buf[2 + name_len + 6];
+    } else {
+        scene.fade_out_s = FADE_OUT_S_DEFAULT;
+    }
 
     lamp_nvs_save_scene(index, &scene);
     ble_notify_scene_list();
@@ -188,6 +195,8 @@ static int scene_list_access(uint16_t conn_handle, uint16_t attr_handle,
         os_mbuf_append(ctxt->om, &scene.cool, 1);
         os_mbuf_append(ctxt->om, &scene.master, 1);
         os_mbuf_append(ctxt->om, &scene.mode_flags, 1);
+        os_mbuf_append(ctxt->om, &scene.fade_in_s, 1);
+        os_mbuf_append(ctxt->om, &scene.fade_out_s, 1);
     }
     return 0;
 }

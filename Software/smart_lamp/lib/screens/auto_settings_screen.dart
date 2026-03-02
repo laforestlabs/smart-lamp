@@ -98,40 +98,15 @@ class AutoSettingsScreen extends ConsumerWidget {
             onChanged: (v) =>
                 ref.read(autoConfigProvider.notifier).setTimeoutSeconds(v.round()),
           ),
-          const Text('Seconds of no motion before dimming',
+          const Text('Seconds of no motion before fade-out begins',
               style: TextStyle(fontSize: 12, color: Colors.grey)),
           const SizedBox(height: 16),
 
-          // Dim level
-          Text('Dim Level: ${config.dimPercent}%',
-              style: Theme.of(context).textTheme.titleSmall),
-          Slider(
-            value: config.dimPercent.toDouble(),
-            min: 0,
-            max: 100,
-            divisions: 20,
-            label: '${config.dimPercent}%',
-            onChanged: (v) =>
-                ref.read(autoConfigProvider.notifier).setDimPercent(v.round()),
-          ),
-          const Text('Brightness during warning phase',
+          const Divider(),
+          const SizedBox(height: 8),
+          Text('Fade rates are stored per-scene.',
               style: TextStyle(fontSize: 12, color: Colors.grey)),
-          const SizedBox(height: 16),
-
-          // Dim duration
-          Text('Dim Duration: ${config.dimDurationSeconds}s',
-              style: Theme.of(context).textTheme.titleSmall),
-          Slider(
-            value: config.dimDurationSeconds.toDouble(),
-            min: 5,
-            max: 120,
-            divisions: 23,
-            label: '${config.dimDurationSeconds}s',
-            onChanged: (v) => ref
-                .read(autoConfigProvider.notifier)
-                .setDimDurationSeconds(v.round()),
-          ),
-          const Text('Time in dim state before turning off',
+          const Text('Set them in the Save Scene dialog when creating a scene.',
               style: TextStyle(fontSize: 12, color: Colors.grey)),
         ],
       ),

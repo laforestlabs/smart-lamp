@@ -189,11 +189,11 @@ class ControlScreen extends ConsumerWidget {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: OutlinedButton.icon(
               onPressed: () async {
-                final name = await showDialog<String>(
+                final result = await showDialog<Map<String, dynamic>>(
                   context: context,
                   builder: (_) => const SaveSceneDialog(),
                 );
-                if (name != null) {
+                if (result != null) {
                   final scenes = ref.read(sceneListProvider);
                   final index = scenes.isEmpty
                       ? 0
@@ -202,12 +202,14 @@ class ControlScreen extends ConsumerWidget {
                   ref.read(sceneListProvider.notifier).saveScene(
                         Scene(
                           index: index,
-                          name: name,
+                          name: result['name'] as String,
                           warm: ledState.warm,
                           neutral: ledState.neutral,
                           cool: ledState.cool,
                           master: ledState.master,
                           modeFlags: currentFlags.toByte(),
+                          fadeInSeconds: result['fadeIn'] as int,
+                          fadeOutSeconds: result['fadeOut'] as int,
                         ),
                       );
                 }
