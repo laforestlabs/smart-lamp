@@ -40,9 +40,19 @@ void lamp_control_apply_scene(const scene_t *scene);
 void lamp_control_set_state(uint8_t warm, uint8_t neutral, uint8_t cool, uint8_t master);
 
 /**
- * Update auto-mode config while auto mode is running.
+ * Update auto-mode config (persists to active scene in NVS).
  */
 void lamp_control_update_auto_config(const auto_config_t *cfg);
+
+/**
+ * Update flame config (persists to active scene in NVS).
+ */
+void lamp_control_update_flame_config(const flame_config_t *cfg);
+
+/**
+ * Set PIR sensitivity level (persists to active scene in NVS).
+ */
+void lamp_control_set_pir_sensitivity(uint8_t level);
 
 /**
  * Apply state received from ESP-NOW sync.

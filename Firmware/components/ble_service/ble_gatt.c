@@ -11,6 +11,7 @@
 #include "lamp_ota.h"
 #include "lamp_control.h"
 #include "sensor.h"
+#include "auto_mode.h"
 #include "flame_mode.h"
 #include "esp_now_sync.h"
 
@@ -94,7 +95,7 @@ static int auto_config_access(uint16_t conn_handle, uint16_t attr_handle,
 {
     if (ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR) {
         auto_config_t cfg;
-        lamp_nvs_load_auto_config(&cfg);
+        auto_mode_get_config(&cfg);
         uint8_t buf[4];
         memcpy(&buf[0], &cfg.timeout_s, 2);
         memcpy(&buf[2], &cfg.lux_threshold, 2);
@@ -112,9 +113,8 @@ static int auto_config_access(uint16_t conn_handle, uint16_t attr_handle,
         auto_config_t cfg;
         memcpy(&cfg.timeout_s, &buf[0], 2);
         memcpy(&cfg.lux_threshold, &buf[2], 2);
-        lamp_nvs_save_auto_config(&cfg);
 
-        /* Live-update if auto mode is active */
+        /* Update live module and persist to active scene */
         lamp_control_update_auto_config(&cfg);
         return 0;
     }
@@ -131,7 +131,7 @@ static int scene_write_access(uint16_t conn_handle, uint16_t attr_handle,
     uint16_t len = OS_MBUF_PKTLEN(ctxt->om);
     if (len < 6) return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
 
-    uint8_t buf[64];
+    uint8_t buf[80];
     uint16_t copy_len = len > sizeof(buf) ? sizeof(buf) : len;
     os_mbuf_copydata(ctxt->om, 0, copy_len, buf);
 
@@ -148,21 +148,37 @@ static int scene_write_access(uint16_t conn_handle, uint16_t attr_handle,
     scene.cool    = buf[2 + name_len + 2];
     scene.master  = buf[2 + name_len + 3];
 
-    /* Optional mode_flags byte (backward compat: default 0 if absent) */
-    if (copy_len >= 2 + name_len + 5) {
-        scene.mode_flags = buf[2 + name_len + 4] & MODE_FLAGS_MASK;
-    }
-    /* Optional fade_in_s and fade_out_s bytes */
-    if (copy_len >= 2 + name_len + 6) {
-        scene.fade_in_s = buf[2 + name_len + 5];
+    /* Optional trailing bytes — each guarded by length check */
+#define SCENE_OPT(off) (copy_len >= (uint16_t)(2 + name_len + 4 + (off) + 1))
+    uint8_t base = 2 + name_len + 4; /* offset of first optional byte */
+
+    scene.mode_flags = SCENE_OPT(0) ? (buf[base + 0] & MODE_FLAGS_MASK) : 0;
+    scene.fade_in_s  = SCENE_OPT(1) ? buf[base + 1] : FADE_IN_S_DEFAULT;
+    scene.fade_out_s = SCENE_OPT(2) ? buf[base + 2] : FADE_OUT_S_DEFAULT;
+
+    /* auto config */
+    if (SCENE_OPT(4)) {
+        memcpy(&scene.auto_timeout_s, &buf[base + 3], 2);
     } else {
-        scene.fade_in_s = FADE_IN_S_DEFAULT;
+        scene.auto_timeout_s = AUTO_TIMEOUT_S_DEFAULT;
     }
-    if (copy_len >= 2 + name_len + 7) {
-        scene.fade_out_s = buf[2 + name_len + 6];
+    if (SCENE_OPT(6)) {
+        memcpy(&scene.auto_lux_threshold, &buf[base + 5], 2);
     } else {
-        scene.fade_out_s = FADE_OUT_S_DEFAULT;
+        scene.auto_lux_threshold = AUTO_LUX_DEFAULT;
     }
+
+    /* flame config */
+    scene.flame_drift_x       = SCENE_OPT(7)  ? buf[base + 7]  : FLAME_DRIFT_X_DEFAULT;
+    scene.flame_drift_y       = SCENE_OPT(8)  ? buf[base + 8]  : FLAME_DRIFT_Y_DEFAULT;
+    scene.flame_restore       = SCENE_OPT(9)  ? buf[base + 9]  : FLAME_RESTORE_DEFAULT;
+    scene.flame_radius        = SCENE_OPT(10) ? buf[base + 10] : FLAME_RADIUS_DEFAULT;
+    scene.flame_bias_y        = SCENE_OPT(11) ? buf[base + 11] : FLAME_BIAS_Y_DEFAULT;
+    scene.flame_flicker_depth = SCENE_OPT(12) ? buf[base + 12] : FLAME_FLICKER_DEPTH_DEFAULT;
+    scene.flame_flicker_speed = SCENE_OPT(13) ? buf[base + 13] : FLAME_FLICKER_SPEED_DEFAULT;
+    scene.flame_brightness    = SCENE_OPT(14) ? buf[base + 14] : FLAME_BRIGHTNESS_DEFAULT;
+    scene.pir_sensitivity     = SCENE_OPT(15) ? buf[base + 15] : PIR_SENSITIVITY_DEFAULT;
+#undef SCENE_OPT
 
     lamp_nvs_save_scene(index, &scene);
     ble_notify_scene_list();
@@ -197,6 +213,18 @@ static int scene_list_access(uint16_t conn_handle, uint16_t attr_handle,
         os_mbuf_append(ctxt->om, &scene.mode_flags, 1);
         os_mbuf_append(ctxt->om, &scene.fade_in_s, 1);
         os_mbuf_append(ctxt->om, &scene.fade_out_s, 1);
+        /* per-scene config fields */
+        uint8_t auto_buf[4];
+        memcpy(&auto_buf[0], &scene.auto_timeout_s, 2);
+        memcpy(&auto_buf[2], &scene.auto_lux_threshold, 2);
+        os_mbuf_append(ctxt->om, auto_buf, 4);
+        uint8_t flame_buf[8] = {
+            scene.flame_drift_x, scene.flame_drift_y, scene.flame_restore,
+            scene.flame_radius,  scene.flame_bias_y,  scene.flame_flicker_depth,
+            scene.flame_flicker_speed, scene.flame_brightness,
+        };
+        os_mbuf_append(ctxt->om, flame_buf, 8);
+        os_mbuf_append(ctxt->om, &scene.pir_sensitivity, 1);
     }
     return 0;
 }
@@ -337,8 +365,7 @@ static int pir_sens_access(uint16_t conn_handle, uint16_t attr_handle,
         uint8_t level;
         os_mbuf_copydata(ctxt->om, 0, 1, &level);
         if (level > PIR_SENS_MAX) level = PIR_SENS_MAX;
-        sensor_set_pir_sensitivity(level);
-        lamp_nvs_save_pir_sensitivity(level);
+        lamp_control_set_pir_sensitivity(level);
         return 0;
     }
     return BLE_ATT_ERR_UNLIKELY;
@@ -362,7 +389,7 @@ static int flame_config_access(uint16_t conn_handle, uint16_t attr_handle,
 
         flame_config_t cfg;
         os_mbuf_copydata(ctxt->om, 0, sizeof(cfg), &cfg);
-        flame_mode_set_config(&cfg);
+        lamp_control_update_flame_config(&cfg);
         return 0;
     }
     return BLE_ATT_ERR_UNLIKELY;

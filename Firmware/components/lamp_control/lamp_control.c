@@ -136,8 +136,19 @@ void lamp_control_apply_scene(const scene_t *scene)
     s_active_scene = *scene;
     lamp_nvs_save_active_scene(scene);
 
-    /* Update auto-mode fade rates from scene */
+    /* Apply all per-scene config atomically */
+    auto_config_t ac = { scene->auto_timeout_s, scene->auto_lux_threshold };
+    auto_mode_set_config(&ac);
     auto_mode_set_fade_rates(scene->fade_in_s, scene->fade_out_s);
+
+    flame_config_t fc = {
+        scene->flame_drift_x, scene->flame_drift_y, scene->flame_restore,
+        scene->flame_radius,  scene->flame_bias_y,  scene->flame_flicker_depth,
+        scene->flame_flicker_speed, scene->flame_brightness,
+    };
+    flame_mode_set_config(&fc);
+
+    sensor_set_pir_sensitivity(scene->pir_sensitivity);
 
     /* Restore mode flags stored with the scene */
     lamp_control_set_flags(scene->mode_flags);
@@ -224,6 +235,30 @@ void lamp_control_apply_sync(uint8_t warm, uint8_t neutral, uint8_t cool,
 void lamp_control_update_auto_config(const auto_config_t *cfg)
 {
     auto_mode_set_config(cfg);
+    s_active_scene.auto_timeout_s     = cfg->timeout_s;
+    s_active_scene.auto_lux_threshold = cfg->lux_threshold;
+    lamp_nvs_save_active_scene(&s_active_scene);
+}
+
+void lamp_control_update_flame_config(const flame_config_t *cfg)
+{
+    flame_mode_set_config(cfg);
+    s_active_scene.flame_drift_x       = cfg->drift_x;
+    s_active_scene.flame_drift_y       = cfg->drift_y;
+    s_active_scene.flame_restore       = cfg->restore;
+    s_active_scene.flame_radius        = cfg->radius;
+    s_active_scene.flame_bias_y        = cfg->bias_y;
+    s_active_scene.flame_flicker_depth = cfg->flicker_depth;
+    s_active_scene.flame_flicker_speed = cfg->flicker_speed;
+    s_active_scene.flame_brightness    = cfg->brightness;
+    lamp_nvs_save_active_scene(&s_active_scene);
+}
+
+void lamp_control_set_pir_sensitivity(uint8_t level)
+{
+    sensor_set_pir_sensitivity(level);
+    s_active_scene.pir_sensitivity = level;
+    lamp_nvs_save_active_scene(&s_active_scene);
 }
 
 /* ── Event loop task ── */
@@ -299,15 +334,23 @@ esp_err_t lamp_control_init(QueueHandle_t sensor_queue)
     lamp_nvs_load_mode(&s_flags);
     s_flags &= MODE_FLAGS_MASK;
 
-    /* Load and apply PIR sensitivity */
-    uint8_t pir_sens;
-    lamp_nvs_load_pir_sensitivity(&pir_sens);
-    sensor_set_pir_sensitivity(pir_sens);
+    /* Apply all per-scene config from active scene */
+    sensor_set_pir_sensitivity(s_active_scene.pir_sensitivity);
+
+    auto_config_t ac = { s_active_scene.auto_timeout_s, s_active_scene.auto_lux_threshold };
+    flame_config_t fc = {
+        s_active_scene.flame_drift_x, s_active_scene.flame_drift_y,
+        s_active_scene.flame_restore,  s_active_scene.flame_radius,
+        s_active_scene.flame_bias_y,   s_active_scene.flame_flicker_depth,
+        s_active_scene.flame_flicker_speed, s_active_scene.flame_brightness,
+    };
 
     /* Initialise sub-modules */
     auto_mode_init();
     auto_mode_set_transition_cb(auto_transition_handler);
+    auto_mode_set_config(&ac);
     auto_mode_set_fade_rates(s_active_scene.fade_in_s, s_active_scene.fade_out_s);
+    flame_mode_set_config(&fc);
 
     /* Apply saved flags */
     s_lamp_on = true;

@@ -33,7 +33,16 @@ static const char *TAG = "flame";
 static TaskHandle_t      s_task = NULL;
 static volatile bool     s_running;
 static SemaphoreHandle_t s_task_done;    /* signalled when flame task exits */
-static flame_config_t    s_cfg;
+static flame_config_t    s_cfg = {
+    .drift_x       = FLAME_DRIFT_X_DEFAULT,
+    .drift_y       = FLAME_DRIFT_Y_DEFAULT,
+    .restore       = FLAME_RESTORE_DEFAULT,
+    .radius        = FLAME_RADIUS_DEFAULT,
+    .bias_y        = FLAME_BIAS_Y_DEFAULT,
+    .flicker_depth = FLAME_FLICKER_DEPTH_DEFAULT,
+    .flicker_speed = FLAME_FLICKER_SPEED_DEFAULT,
+    .brightness    = FLAME_BRIGHTNESS_DEFAULT,
+};
 static volatile uint8_t  s_master_override = 255;
 
 /* Base colour values (0–255) — set from active scene */
@@ -180,7 +189,7 @@ esp_err_t flame_mode_start(void)
         xSemaphoreTake(s_task_done, pdMS_TO_TICKS(500));
     }
 
-    lamp_nvs_load_flame_config(&s_cfg);
+    /* s_cfg already set via flame_mode_set_config() before start */
     s_master_override = 255;
 
     ESP_LOGI(TAG, "Starting flame: color=[%d,%d,%d] override=%d br=%d",
@@ -216,7 +225,7 @@ esp_err_t flame_mode_set_config(const flame_config_t *cfg)
              cfg->drift_x, cfg->drift_y, cfg->restore, cfg->radius,
              cfg->bias_y, cfg->flicker_depth, cfg->flicker_speed, cfg->brightness);
     s_cfg = *cfg;
-    return lamp_nvs_save_flame_config(cfg);
+    return ESP_OK;
 }
 
 void flame_mode_get_config(flame_config_t *cfg)

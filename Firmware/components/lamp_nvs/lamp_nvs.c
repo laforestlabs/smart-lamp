@@ -61,11 +61,27 @@ esp_err_t lamp_nvs_save_active_scene(const scene_t *scene)
     return ret;
 }
 
+static void scene_set_new_field_defaults(scene_t *scene)
+{
+    scene->auto_timeout_s      = AUTO_TIMEOUT_S_DEFAULT;
+    scene->auto_lux_threshold  = AUTO_LUX_DEFAULT;
+    scene->flame_drift_x       = FLAME_DRIFT_X_DEFAULT;
+    scene->flame_drift_y       = FLAME_DRIFT_Y_DEFAULT;
+    scene->flame_restore       = FLAME_RESTORE_DEFAULT;
+    scene->flame_radius        = FLAME_RADIUS_DEFAULT;
+    scene->flame_bias_y        = FLAME_BIAS_Y_DEFAULT;
+    scene->flame_flicker_depth = FLAME_FLICKER_DEPTH_DEFAULT;
+    scene->flame_flicker_speed = FLAME_FLICKER_SPEED_DEFAULT;
+    scene->flame_brightness    = FLAME_BRIGHTNESS_DEFAULT;
+    scene->pir_sensitivity     = PIR_SENSITIVITY_DEFAULT;
+}
+
 esp_err_t lamp_nvs_load_active_scene(scene_t *scene)
 {
     memset(scene, 0, sizeof(*scene));
     scene->fade_in_s  = FADE_IN_S_DEFAULT;
     scene->fade_out_s = FADE_OUT_S_DEFAULT;
+    scene_set_new_field_defaults(scene);
 
     xSemaphoreTake(s_mutex, portMAX_DELAY);
     nvs_handle_t h = open_nvs();
@@ -73,8 +89,8 @@ esp_err_t lamp_nvs_load_active_scene(scene_t *scene)
     esp_err_t ret = nvs_get_blob(h, "active", scene, &len);
 
     if (ret == ESP_ERR_NVS_INVALID_LENGTH) {
-        /* Old format (smaller blob) — re-read with actual stored size;
-         * fade fields remain at defaults set above */
+        /* Old blob smaller than new struct — re-read with actual stored size;
+         * new fields remain at defaults set above */
         ret = nvs_get_blob(h, "active", scene, &len);
     }
 
@@ -82,7 +98,6 @@ esp_err_t lamp_nvs_load_active_scene(scene_t *scene)
     xSemaphoreGive(s_mutex);
 
     if (ret == ESP_ERR_NVS_NOT_FOUND) {
-        /* Default: warm white at 50% */
         memset(scene, 0, sizeof(*scene));
         strncpy(scene->name, "Default", SCENE_NAME_MAX);
         scene->warm      = 200;
@@ -91,6 +106,7 @@ esp_err_t lamp_nvs_load_active_scene(scene_t *scene)
         scene->master    = 128;
         scene->fade_in_s  = FADE_IN_S_DEFAULT;
         scene->fade_out_s = FADE_OUT_S_DEFAULT;
+        scene_set_new_field_defaults(scene);
         return ESP_OK;
     }
     return ret;
@@ -116,55 +132,6 @@ esp_err_t lamp_nvs_load_mode(uint8_t *mode)
 
     if (ret == ESP_ERR_NVS_NOT_FOUND) {
         *mode = 0;  /* no flags = manual */
-        return ESP_OK;
-    }
-    return ret;
-}
-
-/* ── Auto config ── */
-
-esp_err_t lamp_nvs_save_auto_config(const auto_config_t *cfg)
-{
-    xSemaphoreTake(s_mutex, portMAX_DELAY);
-    nvs_handle_t h = open_nvs();
-    esp_err_t ret = nvs_set_blob(h, "auto_cfg", cfg, sizeof(auto_config_t));
-    close_nvs(h);
-    xSemaphoreGive(s_mutex);
-    return ret;
-}
-
-esp_err_t lamp_nvs_load_auto_config(auto_config_t *cfg)
-{
-    xSemaphoreTake(s_mutex, portMAX_DELAY);
-    nvs_handle_t h = open_nvs();
-    size_t len = sizeof(auto_config_t);
-    esp_err_t ret = nvs_get_blob(h, "auto_cfg", cfg, &len);
-    nvs_close(h);
-    xSemaphoreGive(s_mutex);
-
-    if (ret == ESP_ERR_NVS_NOT_FOUND) {
-        cfg->timeout_s     = 300;
-        cfg->lux_threshold = 50;
-        return ESP_OK;
-    }
-    if (ret == ESP_ERR_NVS_INVALID_LENGTH) {
-        /* Old blob (7 bytes) is larger than new struct (4 bytes).
-         * Re-read into a scratch buffer and copy the fields that
-         * survived (timeout_s and lux_threshold are at offset 0-3,
-         * unchanged). */
-        uint8_t tmp[16] = {0};
-        size_t tmp_len = (len < sizeof(tmp)) ? len : sizeof(tmp);
-        xSemaphoreTake(s_mutex, portMAX_DELAY);
-        nvs_handle_t h2 = open_nvs();
-        ret = nvs_get_blob(h2, "auto_cfg", tmp, &tmp_len);
-        nvs_close(h2);
-        xSemaphoreGive(s_mutex);
-        if (ret == ESP_OK && tmp_len >= 4) {
-            memcpy(cfg, tmp, 4);
-        } else {
-            cfg->timeout_s     = 300;
-            cfg->lux_threshold = 50;
-        }
         return ESP_OK;
     }
     return ret;
@@ -197,6 +164,7 @@ esp_err_t lamp_nvs_load_scene(uint8_t index, scene_t *scene)
     memset(scene, 0, sizeof(*scene));
     scene->fade_in_s  = FADE_IN_S_DEFAULT;
     scene->fade_out_s = FADE_OUT_S_DEFAULT;
+    scene_set_new_field_defaults(scene);
 
     xSemaphoreTake(s_mutex, portMAX_DELAY);
     nvs_handle_t h = open_nvs();
@@ -204,8 +172,8 @@ esp_err_t lamp_nvs_load_scene(uint8_t index, scene_t *scene)
     esp_err_t ret = nvs_get_blob(h, key, scene, &len);
 
     if (ret == ESP_ERR_NVS_INVALID_LENGTH) {
-        /* Old format (smaller blob) — re-read with actual stored size;
-         * fade fields remain at defaults set above */
+        /* Old blob smaller than new struct — re-read with actual stored size;
+         * new fields remain at defaults set above */
         ret = nvs_get_blob(h, key, scene, &len);
     }
 
@@ -299,69 +267,6 @@ uint8_t lamp_nvs_get_schedule_count(void)
         if (lamp_nvs_load_schedule(i, &tmp) == ESP_OK) count++;
     }
     return count;
-}
-
-/* ── Flame config ── */
-
-esp_err_t lamp_nvs_save_flame_config(const flame_config_t *cfg)
-{
-    xSemaphoreTake(s_mutex, portMAX_DELAY);
-    nvs_handle_t h = open_nvs();
-    esp_err_t ret = nvs_set_blob(h, "flame_cfg", cfg, sizeof(flame_config_t));
-    close_nvs(h);
-    xSemaphoreGive(s_mutex);
-    return ret;
-}
-
-/* ── PIR sensitivity ── */
-
-esp_err_t lamp_nvs_save_pir_sensitivity(uint8_t level)
-{
-    xSemaphoreTake(s_mutex, portMAX_DELAY);
-    nvs_handle_t h = open_nvs();
-    esp_err_t ret = nvs_set_u8(h, "pir_sens", level);
-    close_nvs(h);
-    xSemaphoreGive(s_mutex);
-    return ret;
-}
-
-esp_err_t lamp_nvs_load_pir_sensitivity(uint8_t *level)
-{
-    xSemaphoreTake(s_mutex, portMAX_DELAY);
-    nvs_handle_t h = open_nvs();
-    esp_err_t ret = nvs_get_u8(h, "pir_sens", level);
-    nvs_close(h);
-    xSemaphoreGive(s_mutex);
-
-    if (ret == ESP_ERR_NVS_NOT_FOUND) {
-        *level = PIR_SENS_DEFAULT;
-        return ESP_OK;
-    }
-    return ret;
-}
-
-esp_err_t lamp_nvs_load_flame_config(flame_config_t *cfg)
-{
-    xSemaphoreTake(s_mutex, portMAX_DELAY);
-    nvs_handle_t h = open_nvs();
-    size_t len = sizeof(flame_config_t);
-    esp_err_t ret = nvs_get_blob(h, "flame_cfg", cfg, &len);
-    nvs_close(h);
-    xSemaphoreGive(s_mutex);
-
-    if (ret == ESP_ERR_NVS_NOT_FOUND) {
-        /* Defaults: 100% intensity, 50% calm, 50% diffuse, 5% flicker, 5% fast */
-        cfg->drift_x       = 128;   /* 50% */
-        cfg->drift_y        = 102;   /* 80% of drift_x */
-        cfg->restore        = 20;    /* 0.08 * 255 */
-        cfg->radius         = 128;   /* 50% */
-        cfg->bias_y         = 128;   /* grid centre */
-        cfg->flicker_depth  = 13;    /* 5% */
-        cfg->flicker_speed  = 13;    /* 5% */
-        cfg->brightness     = 255;   /* 100% */
-        return ESP_OK;
-    }
-    return ret;
 }
 
 /* ── Sync group ── */

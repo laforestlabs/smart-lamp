@@ -60,6 +60,9 @@ class BleCodec {
   static List<int> encodeSceneWrite(Scene scene) {
     final nameBytes = utf8.encode(scene.name);
     final len = nameBytes.length > 16 ? 16 : nameBytes.length;
+    final bd = ByteData(4);
+    bd.setUint16(0, scene.autoTimeoutSeconds, Endian.little);
+    bd.setUint16(2, scene.autoLuxThreshold, Endian.little);
     return [
       scene.index,
       len,
@@ -71,6 +74,16 @@ class BleCodec {
       scene.modeFlags,
       scene.fadeInSeconds.clamp(0, 255),
       scene.fadeOutSeconds.clamp(0, 255),
+      ...bd.buffer.asUint8List(),
+      scene.flameDriftX,
+      scene.flameDriftY,
+      scene.flameRestore,
+      scene.flameRadius,
+      scene.flameBiasY,
+      scene.flameFlickerDepth,
+      scene.flameFlickerSpeed,
+      scene.flameBrightness,
+      scene.pirSensitivity.clamp(0, 31),
     ];
   }
 
@@ -95,6 +108,24 @@ class BleCodec {
       final modeFlags = (offset < bytes.length) ? bytes[offset++] : 0;
       final fadeIn = (offset < bytes.length) ? bytes[offset++] : 3;
       final fadeOut = (offset < bytes.length) ? bytes[offset++] : 10;
+      // Optional 13 new per-scene bytes (auto + flame + pir)
+      int autoTimeout = 300;
+      int autoLux = 50;
+      if (offset + 4 <= bytes.length) {
+        final bd = ByteData.sublistView(Uint8List.fromList(bytes), offset, offset + 4);
+        autoTimeout = bd.getUint16(0, Endian.little);
+        autoLux = bd.getUint16(2, Endian.little);
+        offset += 4;
+      }
+      final driftX     = (offset < bytes.length) ? bytes[offset++] : 128;
+      final driftY     = (offset < bytes.length) ? bytes[offset++] : 102;
+      final restore    = (offset < bytes.length) ? bytes[offset++] : 20;
+      final radius     = (offset < bytes.length) ? bytes[offset++] : 128;
+      final biasY      = (offset < bytes.length) ? bytes[offset++] : 128;
+      final flickDepth = (offset < bytes.length) ? bytes[offset++] : 13;
+      final flickSpeed = (offset < bytes.length) ? bytes[offset++] : 13;
+      final flameBri   = (offset < bytes.length) ? bytes[offset++] : 255;
+      final pirSens    = (offset < bytes.length) ? bytes[offset++] : 24;
       scenes.add(Scene(
         index: index,
         name: name,
@@ -105,6 +136,17 @@ class BleCodec {
         modeFlags: modeFlags,
         fadeInSeconds: fadeIn,
         fadeOutSeconds: fadeOut,
+        autoTimeoutSeconds: autoTimeout,
+        autoLuxThreshold: autoLux,
+        flameDriftX: driftX,
+        flameDriftY: driftY,
+        flameRestore: restore,
+        flameRadius: radius,
+        flameBiasY: biasY,
+        flameFlickerDepth: flickDepth,
+        flameFlickerSpeed: flickSpeed,
+        flameBrightness: flameBri,
+        pirSensitivity: pirSens,
       ));
     }
     return scenes;

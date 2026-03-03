@@ -163,7 +163,9 @@ static void start_fade_out(void)
 
 esp_err_t auto_mode_init(void)
 {
-    lamp_nvs_load_auto_config(&s_cfg);
+    /* s_cfg populated via auto_mode_set_config() called from lamp_control_init */
+    s_cfg.timeout_s     = AUTO_TIMEOUT_S_DEFAULT;
+    s_cfg.lux_threshold = AUTO_LUX_DEFAULT;
     lamp_nvs_load_active_scene(&s_active_scene);
 
     esp_timer_create_args_t timeout_args = {
@@ -254,7 +256,7 @@ auto_state_t auto_mode_get_state(void)
 esp_err_t auto_mode_set_config(const auto_config_t *cfg)
 {
     s_cfg = *cfg;
-    return lamp_nvs_save_auto_config(cfg);
+    return ESP_OK;
 }
 
 void auto_mode_get_config(auto_config_t *cfg)

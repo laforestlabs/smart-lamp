@@ -9,6 +9,9 @@ import '../providers/ble_provider.dart';
 import '../providers/device_list_provider.dart';
 import '../providers/lamp_name_provider.dart';
 import '../providers/lamp_state_provider.dart';
+import '../providers/auto_config_provider.dart';
+import '../providers/flame_config_provider.dart';
+import '../providers/pir_sensitivity_provider.dart';
 import '../providers/scene_provider.dart';
 import '../providers/sync_config_provider.dart';
 import '../widgets/brightness_slider.dart';
@@ -199,6 +202,9 @@ class ControlScreen extends ConsumerWidget {
                       ? 0
                       : scenes.map((s) => s.index).reduce((a, b) => a > b ? a : b) + 1;
                   final currentFlags = ref.read(modeFlagsProvider);
+                  final autoConfig = ref.read(autoConfigProvider);
+                  final flameConfig = ref.read(flameConfigProvider);
+                  final pirLevel = ref.read(pirSensitivityProvider);
                   ref.read(sceneListProvider.notifier).saveScene(
                         Scene(
                           index: index,
@@ -210,6 +216,17 @@ class ControlScreen extends ConsumerWidget {
                           modeFlags: currentFlags.toByte(),
                           fadeInSeconds: result['fadeIn'] as int,
                           fadeOutSeconds: result['fadeOut'] as int,
+                          autoTimeoutSeconds: autoConfig.timeoutSeconds,
+                          autoLuxThreshold: autoConfig.luxThreshold,
+                          flameDriftX: flameConfig.driftX,
+                          flameDriftY: flameConfig.driftY,
+                          flameRestore: flameConfig.restore,
+                          flameRadius: flameConfig.radius,
+                          flameBiasY: flameConfig.biasY,
+                          flameFlickerDepth: flameConfig.flickerDepth,
+                          flameFlickerSpeed: flameConfig.flickerSpeed,
+                          flameBrightness: flameConfig.brightness,
+                          pirSensitivity: pirLevel,
                         ),
                       );
                 }
