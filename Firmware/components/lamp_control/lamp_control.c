@@ -176,15 +176,14 @@ void lamp_control_set_state(uint8_t warm, uint8_t neutral, uint8_t cool, uint8_t
             s_lamp_on = true;
         }
     } else if (s_flags & MODE_FLAG_AUTO) {
-        /* Auto-only mode: honour explicit on/off immediately */
+        /* Auto-only mode: honour explicit on/off; apply colours when lamp is on */
         if (master == 0) {
             lamp_off();
             s_lamp_on = false;
-        } else if (!s_lamp_on) {
+        } else {
             apply_manual_scene();
             s_lamp_on = true;
         }
-        /* else: lamp already on, scene saved — auto mode manages brightness */
     } else {
         /* Manual mode: apply directly */
         apply_manual_scene();
