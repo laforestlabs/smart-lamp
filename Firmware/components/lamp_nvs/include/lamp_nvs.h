@@ -19,7 +19,7 @@ extern "C" {
 
 /* Default auto-mode settings */
 #define AUTO_TIMEOUT_S_DEFAULT  300
-#define AUTO_LUX_DEFAULT        50
+#define AUTO_LUX_DEFAULT        185
 
 /* Default flame settings (match Flutter FlameConfig defaults) */
 #define FLAME_DRIFT_X_DEFAULT        128

@@ -4,7 +4,7 @@ class AutoConfig {
 
   const AutoConfig({
     this.timeoutSeconds = 300,
-    this.luxThreshold = 50,
+    this.luxThreshold = 185,
   });
 
   AutoConfig copyWith({

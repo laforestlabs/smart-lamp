@@ -93,9 +93,9 @@ class AutoSettingsScreen extends ConsumerWidget {
               style: Theme.of(context).textTheme.titleSmall),
           Slider(
             value: config.timeoutSeconds.toDouble(),
-            min: 30,
+            min: 10,
             max: 600,
-            divisions: 19,
+            divisions: 59,
             label: '${config.timeoutSeconds}s',
             onChanged: (v) =>
                 ref.read(autoConfigProvider.notifier).setTimeoutSeconds(v.round()),
