@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/auto_config_provider.dart';
+import '../providers/fade_rates_provider.dart';
 import '../providers/pir_sensitivity_provider.dart';
 import '../providers/sensor_data_provider.dart';
 
@@ -12,6 +13,7 @@ class AutoSettingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final config = ref.watch(autoConfigProvider);
     final pirSensitivity = ref.watch(pirSensitivityProvider);
+    final fadeRates = ref.watch(fadeRatesProvider);
     final sensorData = ref.watch(sensorDataProvider);
 
     return Scaffold(
@@ -104,9 +106,36 @@ class AutoSettingsScreen extends ConsumerWidget {
 
           const Divider(),
           const SizedBox(height: 8),
-          Text('Fade rates are stored per-scene.',
+
+          // Fade in
+          Text('Fade In: ${fadeRates.fadeInSeconds}s',
+              style: Theme.of(context).textTheme.titleSmall),
+          Slider(
+            value: fadeRates.fadeInSeconds.toDouble(),
+            min: 0,
+            max: 60,
+            divisions: 60,
+            label: '${fadeRates.fadeInSeconds}s',
+            onChanged: (v) =>
+                ref.read(fadeRatesProvider.notifier).setFadeIn(v.round()),
+          ),
+          const Text('Time to fade up when motion activates the lamp',
               style: TextStyle(fontSize: 12, color: Colors.grey)),
-          const Text('Set them in the Save Scene dialog when creating a scene.',
+          const SizedBox(height: 16),
+
+          // Fade out
+          Text('Fade Out: ${fadeRates.fadeOutSeconds}s',
+              style: Theme.of(context).textTheme.titleSmall),
+          Slider(
+            value: fadeRates.fadeOutSeconds.toDouble(),
+            min: 0,
+            max: 60,
+            divisions: 60,
+            label: '${fadeRates.fadeOutSeconds}s',
+            onChanged: (v) =>
+                ref.read(fadeRatesProvider.notifier).setFadeOut(v.round()),
+          ),
+          const Text('Time to fade out after inactivity timeout',
               style: TextStyle(fontSize: 12, color: Colors.grey)),
         ],
       ),

@@ -10,6 +10,7 @@ import '../providers/device_list_provider.dart';
 import '../providers/lamp_name_provider.dart';
 import '../providers/lamp_state_provider.dart';
 import '../providers/auto_config_provider.dart';
+import '../providers/fade_rates_provider.dart';
 import '../providers/flame_config_provider.dart';
 import '../providers/pir_sensitivity_provider.dart';
 import '../providers/scene_provider.dart';
@@ -192,30 +193,31 @@ class ControlScreen extends ConsumerWidget {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: OutlinedButton.icon(
               onPressed: () async {
-                final result = await showDialog<Map<String, dynamic>>(
+                final name = await showDialog<String>(
                   context: context,
                   builder: (_) => const SaveSceneDialog(),
                 );
-                if (result != null) {
+                if (name != null) {
                   final scenes = ref.read(sceneListProvider);
                   final index = scenes.isEmpty
                       ? 0
                       : scenes.map((s) => s.index).reduce((a, b) => a > b ? a : b) + 1;
                   final currentFlags = ref.read(modeFlagsProvider);
                   final autoConfig = ref.read(autoConfigProvider);
+                  final fadeRates = ref.read(fadeRatesProvider);
                   final flameConfig = ref.read(flameConfigProvider);
                   final pirLevel = ref.read(pirSensitivityProvider);
                   ref.read(sceneListProvider.notifier).saveScene(
                         Scene(
                           index: index,
-                          name: result['name'] as String,
+                          name: name,
                           warm: ledState.warm,
                           neutral: ledState.neutral,
                           cool: ledState.cool,
                           master: ledState.master,
                           modeFlags: currentFlags.toByte(),
-                          fadeInSeconds: result['fadeIn'] as int,
-                          fadeOutSeconds: result['fadeOut'] as int,
+                          fadeInSeconds: fadeRates.fadeInSeconds,
+                          fadeOutSeconds: fadeRates.fadeOutSeconds,
                           autoTimeoutSeconds: autoConfig.timeoutSeconds,
                           autoLuxThreshold: autoConfig.luxThreshold,
                           flameDriftX: flameConfig.driftX,
