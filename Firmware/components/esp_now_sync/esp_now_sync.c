@@ -145,13 +145,15 @@ static void sync_tx_task(void *arg)
         if (xQueueReceive(s_tx_queue, &msg, portMAX_DELAY) == pdTRUE) {
             if (s_group_id == 0) continue;
 
-            /* Send 5× with jittered gaps spread over ~700 ms.
+            /* Send up to 5× with jittered gaps spread over ~700 ms.
              * BLE coexistence blocks the radio during connection events (~20–100 ms
-             * intervals). Fixed-interval retries can systematically collide with BLE
-             * slots. Adding per-retry jitter (esp_random) ensures retries are
+             * intervals). Adding per-retry jitter (esp_random) ensures retries are
              * statistically independent, making all-5-fail extremely unlikely.
-             * Base gaps: 50, 80, 150, 200 ms (+0–49 ms jitter each).
-             * Duplicates are idempotent — receiver applies the same state. */
+             *
+             * Between retries, check if a newer message is queued (from a rapid
+             * state change). If so, abandon the current retries and immediately
+             * switch to the newer message — this reduces convergence time from
+             * N×700 ms to ~700 ms for rapid changes. */
             static const uint16_t base_gaps_ms[] = {50, 80, 150, 200};
             for (int i = 0; i < 5; i++) {
                 esp_err_t ret = esp_now_send(broadcast, (uint8_t *)&msg, sizeof(msg));
@@ -163,6 +165,12 @@ static void sync_tx_task(void *arg)
                 if (i < 4) {
                     uint32_t jitter = esp_random() % 50;
                     vTaskDelay(pdMS_TO_TICKS(base_gaps_ms[i] + jitter));
+                    /* Check for newer message — supersedes current retries */
+                    if (xQueueReceive(s_tx_queue, &msg, 0) == pdTRUE) {
+                        ESP_LOGI(TAG, "newer state queued (seq=%lu), restarting retries",
+                                 (unsigned long)msg.sequence);
+                        i = -1;  /* restart retry loop with new message */
+                    }
                 }
             }
         }

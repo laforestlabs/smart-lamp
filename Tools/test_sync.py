@@ -106,8 +106,18 @@ async def setup():
         print(f"[Setup] WARNING: Could not configure SN003 via BLE: {e}")
         print("[Setup] Assuming SN003 is already in group 1 (check serial output)")
 
-    # Wait for BLE stack to settle after disconnect
-    await asyncio.sleep(2.0)
+    # BLE connection changes SN003's WiFi channel, breaking ESP-NOW.
+    # Reset SN003 via DTR toggle so WiFi re-initializes on channel 1.
+    print("[Setup] Resetting SN003 (DTR toggle) to restore WiFi channel...")
+    monitor.stop()
+    monitor.start(SERIAL_PORT)
+    boot_done = monitor.wait_for("ESP-NOW sync init", timeout=8.0)
+    if boot_done:
+        print("[Setup] SN003 rebooted, ESP-NOW ready")
+    else:
+        print("[Setup] WARNING: Did not see boot marker after reset")
+    await asyncio.sleep(1.0)
+    monitor.clear()
 
     # Connect to SN001 — this is our control lamp
     print("\n[Setup] Connecting to SN001 (control lamp)...")
@@ -281,28 +291,36 @@ async def test_rapid_changes():
         await lamp.set_color(w, w, w, 200)
         await asyncio.sleep(0.05)
 
-    # Wait for sync to settle — collect all Sync RX events
-    await asyncio.sleep(3.0)
+    # The TX task processes one message over ~700ms, then picks up the next.
+    # With xQueueOverwrite, up to 3 batches may be needed (~2.1s worst case).
+    # Wait long enough for all retries to complete and arrive.
+    await asyncio.sleep(4.0)
 
-    # Find the last sync event
-    last_rx = None
+    # Drain all Sync RX events from the buffer (they're already captured)
+    all_rx = []
     while True:
-        rx = monitor.wait_for_sync_rx(timeout=0.5)
+        rx = monitor.wait_for_sync_rx(timeout=1.0)
         if rx is None:
             break
-        last_rx = rx
+        all_rx.append(rx)
 
-    if last_rx is None:
+    if not all_rx:
         result.fail(name, "No Sync RX received at all")
         monitor.dump_recent()
         return
 
+    last_rx = all_rx[-1]
+    unique_states = list({(r.warm, r.neutral, r.cool) for r in all_rx})
+
     # Final color should be 250,250,250,200
     if last_rx.warm == 250 and last_rx.neutral == 250 and last_rx.cool == 250:
-        result.ok(name, f"Converged to [{last_rx.warm},{last_rx.neutral},{last_rx.cool},{last_rx.master}]")
+        result.ok(name,
+            f"Converged to [{last_rx.warm},{last_rx.neutral},{last_rx.cool},{last_rx.master}] "
+            f"({len(all_rx)} events, {len(unique_states)} unique states)")
     else:
         result.fail(name,
-            f"Expected final [250,250,250], got [{last_rx.warm},{last_rx.neutral},{last_rx.cool}]")
+            f"Expected final [250,250,250], got [{last_rx.warm},{last_rx.neutral},{last_rx.cool}] "
+            f"({len(all_rx)} events, states: {unique_states})")
 
 
 async def test_group_isolation():
@@ -334,15 +352,101 @@ async def test_group_isolation():
     monitor.clear()
 
 
+async def test_sync_latency():
+    """Measure single-change sync latency (time from BLE write to SN003 Sync RX)."""
+    name = "test_sync_latency"
+    await reset_baseline()
+
+    latencies = []
+    for trial in range(5):
+        # Longer settle to ensure no stale retries contaminate the measurement
+        await asyncio.sleep(2.0)
+        monitor.clear()
+        w = 60 + trial * 30  # Distinctive values: 60, 90, 120, 150, 180
+
+        t_start = time.monotonic()
+        await lamp.set_color(w, w, w, 200)
+
+        # Wait for the specific value (skip stale retries from previous ops)
+        deadline = t_start + SYNC_TIMEOUT
+        found = False
+        while time.monotonic() < deadline:
+            remaining = deadline - time.monotonic()
+            rx = monitor.wait_for_sync_rx(timeout=max(remaining, 0.1))
+            if rx is None:
+                break
+            if rx.warm == w:
+                latency_ms = (time.monotonic() - t_start) * 1000
+                latencies.append(latency_ms)
+                found = True
+                break
+            # Wrong value (stale retry) — keep looking
+
+    if not latencies:
+        result.fail(name, "No successful latency measurements")
+        return
+
+    avg = sum(latencies) / len(latencies)
+    worst = max(latencies)
+    best = min(latencies)
+    result.ok(name,
+        f"{len(latencies)}/5 measured — avg={avg:.0f}ms, best={best:.0f}ms, worst={worst:.0f}ms")
+
+
+async def test_rapid_convergence_time():
+    """Measure how long rapid changes take to converge (tests retry-restart)."""
+    name = "test_rapid_convergence_time"
+    await reset_baseline()
+    monitor.clear()
+
+    # Send 5 rapid changes and record the time
+    t_start = time.monotonic()
+    for i in range(5):
+        w = 50 * (i + 1)
+        await lamp.set_color(w, w, w, 200)
+        await asyncio.sleep(0.05)
+
+    # Wait for the final value (250) to arrive on SN003.
+    # Don't break on temporary gaps — keep polling until deadline.
+    deadline = t_start + 8.0
+    final_rx = None
+    converged = False
+    while time.monotonic() < deadline:
+        remaining = deadline - time.monotonic()
+        rx = monitor.wait_for_sync_rx(timeout=min(remaining, 1.0))
+        if rx is not None:
+            final_rx = rx
+            if rx.warm == 250 and rx.neutral == 250 and rx.cool == 250:
+                converged = True
+                break
+
+    t_converged = time.monotonic()
+    elapsed_ms = (t_converged - t_start) * 1000
+
+    if final_rx is None:
+        result.fail(name, "No Sync RX received at all")
+        monitor.dump_recent()
+        return
+
+    if converged:
+        result.ok(name, f"Converged in {elapsed_ms:.0f}ms")
+    else:
+        result.fail(name,
+            f"Did not converge: last=[{final_rx.warm},{final_rx.neutral},{final_rx.cool}] "
+            f"after {elapsed_ms:.0f}ms")
+
+
 # ── Test Registry ──
 
 ALL_TESTS = [
-    ("test_color_sync",      test_color_sync),
-    ("test_on_off_sync",     test_on_off_sync),
-    ("test_flags_sync",      test_flags_sync),
-    ("test_full_scene_sync", test_full_scene_sync),
-    ("test_rapid_changes",   test_rapid_changes),
-    ("test_group_isolation", test_group_isolation),
+    ("test_color_sync",            test_color_sync),
+    ("test_on_off_sync",           test_on_off_sync),
+    ("test_flags_sync",            test_flags_sync),
+    ("test_full_scene_sync",       test_full_scene_sync),
+    ("test_rapid_changes",         test_rapid_changes),
+    ("test_group_isolation",       test_group_isolation),
+    ("test_sync_latency",          test_sync_latency),
+    ("test_rapid_convergence_time", test_rapid_convergence_time),
 ]
 
 

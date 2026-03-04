@@ -19,7 +19,7 @@ Automated test suite that controls one lamp via BLE and monitors another via USB
 | File | Purpose |
 |------|---------|
 | `lamp_test.py` | Reusable library: `LampBLE` (async BLE control) + `SerialMonitor` (threaded serial log capture) |
-| `test_sync.py` | Automated test suite with 6 sync tests |
+| `test_sync.py` | Automated test suite with 8 sync tests |
 
 ### Usage
 
@@ -49,10 +49,12 @@ python3 test_sync.py --list
 | `test_full_scene_sync` | Full scene parameters (color + brightness) propagate |
 | `test_rapid_changes` | Multiple rapid changes converge to final state on SN003 |
 | `test_group_isolation` | SN003 (group 1) ignores broadcasts from SN001 (group 2) |
+| `test_sync_latency` | Measures single-change sync latency (BLE write to SN003 Sync RX) |
+| `test_rapid_convergence_time` | Measures how long rapid changes take to converge on SN003 |
 
 ### How It Works
 
-1. **Setup**: Opens the serial port (resets SN003 via DTR), waits for boot, connects to SN003 via BLE to set group=1, disconnects, then connects to SN001 as the control lamp.
+1. **Setup**: Opens the serial port (resets SN003 via DTR), waits for boot, connects to SN003 via BLE to set group=1, disconnects, resets SN003 again (BLE connection changes WiFi channel), then connects to SN001 as the control lamp.
 2. **Each test**: Clears the serial buffer, performs a BLE write to SN001, waits up to 5 seconds for a matching `Sync RX` log line on SN003's serial output, and asserts the expected values.
 3. **Teardown**: Resets SN001 to manual mode and disconnects.
 
