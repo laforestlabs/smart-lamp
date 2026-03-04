@@ -62,7 +62,8 @@ monitor = SerialMonitor(verbose=verbose)
 result = TestResult()
 
 # How long to wait for sync to arrive on SN003 (seconds)
-SYNC_TIMEOUT = 5.0
+# 10 retries over ~1.5s + propagation margin
+SYNC_TIMEOUT = 6.0
 
 
 async def reset_baseline():
@@ -70,8 +71,8 @@ async def reset_baseline():
     await lamp.set_flags(0x00)
     await asyncio.sleep(0.5)
     await lamp.set_color(128, 128, 128, 200)
-    # Wait for all 5 retries (~700ms) + SN003 processing + margin
-    await asyncio.sleep(2.0)
+    # Wait for all 10 retries (~1.5s) + SN003 processing + margin
+    await asyncio.sleep(3.0)
     monitor.clear()
 
 
@@ -195,7 +196,8 @@ async def test_on_off_sync():
 
     result.ok(name + " (off)", f"lamp_on=0, master={rx.master}")
 
-    await asyncio.sleep(1.0)
+    # Wait for all 10 "off" retries to finish (~1.5s) + margin before clearing
+    await asyncio.sleep(3.0)
     monitor.clear()
 
     # Turn back on
@@ -291,10 +293,10 @@ async def test_rapid_changes():
         await lamp.set_color(w, w, w, 200)
         await asyncio.sleep(0.05)
 
-    # The TX task processes one message over ~700ms, then picks up the next.
-    # With xQueueOverwrite, up to 3 batches may be needed (~2.1s worst case).
+    # The TX task processes one message over ~1.5s, then picks up the next.
+    # With xQueueOverwrite + retry-restart, convergence should be ~1.5s.
     # Wait long enough for all retries to complete and arrive.
-    await asyncio.sleep(4.0)
+    await asyncio.sleep(6.0)
 
     # Drain all Sync RX events from the buffer (they're already captured)
     all_rx = []
@@ -408,7 +410,7 @@ async def test_rapid_convergence_time():
 
     # Wait for the final value (250) to arrive on SN003.
     # Don't break on temporary gaps — keep polling until deadline.
-    deadline = t_start + 8.0
+    deadline = t_start + 12.0
     final_rx = None
     converged = False
     while time.monotonic() < deadline:

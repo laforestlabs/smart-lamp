@@ -7,6 +7,7 @@
 #include "esp_netif.h"
 #include "esp_event.h"
 #include "esp_random.h"
+#include "esp_coexist.h"  /* esp_coex_preference_set() */
 #include "lamp_nvs.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -72,6 +73,16 @@ static esp_err_t wifi_init_sta_minimal(void)
 
     /* Pin to channel 1 so all lamps are on the same channel for ESP-NOW */
     ESP_ERROR_CHECK(esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE));
+
+    /* Disable WiFi power save — keeps radio responsive for ESP-NOW */
+    ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
+
+    /* Max TX power (78 = 19.5 dBm) for best ESP-NOW range */
+    ESP_ERROR_CHECK(esp_wifi_set_max_tx_power(78));
+
+    /* Prioritise WiFi for ESP-NOW delivery — BLE writes are infrequent so
+     * slight BLE latency increase is acceptable for much better sync reliability */
+    ESP_ERROR_CHECK(esp_coex_preference_set(ESP_COEX_PREFER_WIFI));
 
     esp_read_mac(s_own_mac, ESP_MAC_WIFI_STA);
 
@@ -145,24 +156,24 @@ static void sync_tx_task(void *arg)
         if (xQueueReceive(s_tx_queue, &msg, portMAX_DELAY) == pdTRUE) {
             if (s_group_id == 0) continue;
 
-            /* Send up to 5× with jittered gaps spread over ~700 ms.
+            /* Send up to 10× with jittered gaps spread over ~1.5 s.
              * BLE coexistence blocks the radio during connection events (~20–100 ms
-             * intervals). Adding per-retry jitter (esp_random) ensures retries are
-             * statistically independent, making all-5-fail extremely unlikely.
+             * intervals). With measured per-retry delivery rate of ~16% under BLE
+             * load, 10 retries gives ~84% per-broadcast success vs ~60% with 5.
              *
              * Between retries, check if a newer message is queued (from a rapid
              * state change). If so, abandon the current retries and immediately
              * switch to the newer message — this reduces convergence time from
-             * N×700 ms to ~700 ms for rapid changes. */
-            static const uint16_t base_gaps_ms[] = {50, 80, 150, 200};
-            for (int i = 0; i < 5; i++) {
+             * N×1.5 s to ~1.5 s for rapid changes. */
+            static const uint16_t base_gaps_ms[] = {30, 50, 70, 100, 130, 150, 170, 190, 200};
+            for (int i = 0; i < 10; i++) {
                 esp_err_t ret = esp_now_send(broadcast, (uint8_t *)&msg, sizeof(msg));
                 if (ret != ESP_OK) {
                     ESP_LOGW(TAG, "send[%d] enqueue failed: %s", i, esp_err_to_name(ret));
                 } else {
                     ESP_LOGI(TAG, "send[%d] enqueued (seq=%lu)", i, (unsigned long)msg.sequence);
                 }
-                if (i < 4) {
+                if (i < 9) {
                     uint32_t jitter = esp_random() % 50;
                     vTaskDelay(pdMS_TO_TICKS(base_gaps_ms[i] + jitter));
                     /* Check for newer message — supersedes current retries */
