@@ -25,6 +25,7 @@ main.c                          Boot sequence & task creation
   +-- flame_mode/               30 fps Gaussian hot-spot random walk + flicker
   +-- ble_service/              NimBLE GAP + GATT (12 characteristics)
   +-- lamp_ota/                 Two-partition OTA via BLE
+  +-- esp_now_sync/             ESP-NOW group broadcast (WiFi ch 1)
   +-- lamp_control/             Central event loop & mode manager
 ```
 
@@ -35,6 +36,7 @@ main.c                          Boot sequence & task creation
 | `lamp_control_task` | 5 | 4096 | Main event loop: sensor events, touch, BLE commands |
 | `flame_task` | 4 | 4096 | 30 fps animation; created/deleted on mode switch |
 | `sensor_adc_task` | 3 | 2048 | 1 s ambient light ADC polling |
+| `sync_tx_task` | 4 | 3072 | ESP-NOW broadcast with jittered retries |
 | NimBLE host | 6 | 4096 | Internal BLE stack |
 
 ### Component Details
@@ -63,14 +65,19 @@ main.c                          Boot sequence & task creation
 | Sensor Data | AA08 | Read, Notify | 3 B |
 | OTA Control | AA09 | Write | 1 B |
 | OTA Data | AA0A | Write No Rsp | variable |
-| Flame Config | AA0B | Read, Write | 8 B |
-| Device Info | AA0C | Read | variable |
+| PIR Sensitivity | AA0B | Read, Write | 1 B |
+| Flame Config | AA0C | Read, Write | 8 B |
+| Device Info | AA0D | Read | variable |
+| Sync Config | AA0E | Read, Write | 7 B |
+| Lamp Name | AA0F | Read, Write | variable |
 
 BLE writes post events to a queue; `lamp_control` consumes them. LED State notifications are rate-limited to 10 Hz; Sensor Data notifies on motion change and every 5 s.
 
 **lamp_ota** -- Two-partition OTA using `esp_ota_begin/write/end`. The app receives firmware chunks over BLE (OTA Data characteristic) and streams them to the inactive OTA partition. On success the device reboots into the new firmware. On boot, `lamp_ota_check_rollback()` validates the running image and rolls back if it was marked pending verification.
 
-**lamp_control** -- Central event loop running as a FreeRTOS task. Consumes sensor events from the shared queue, dispatches touch actions (short tap = on/off toggle, long press = BLE advertising), manages mode switching (manual/auto/flame), and routes BLE commands to the appropriate subsystem. Restores saved state from NVS on boot.
+**esp_now_sync** -- ESP-NOW group synchronisation over WiFi channel 1. Lamps with the same group ID (1-255, 0 = disabled) broadcast a 29-byte packed state message on every local change. The message carries the full scene (color, brightness, mode flags, auto config, flame config, PIR sensitivity) plus an explicit `lamp_on` field. Transmission uses 5 retries with jittered gaps (~50-250 ms each, ~700 ms total) to avoid systematic BLE coexistence collisions. Reception runs in WiFi task context and posts events to the sensor queue for deferred processing by `lamp_control`. Duplicate packets are idempotent (same sequence number = same state). Re-broadcast is suppressed on the receiving side to prevent loops.
+
+**lamp_control** -- Central event loop running as a FreeRTOS task. Consumes sensor events from the shared queue, dispatches touch actions (short tap = on/off toggle, long press = BLE advertising), manages mode switching (manual/auto/flame), and routes BLE commands to the appropriate subsystem. Handles ESP-NOW sync events atomically via `lamp_control_apply_sync()`, setting on/off state before applying the scene to prevent brief LED flashes. Restores saved state from NVS on boot.
 
 ## Partition Table
 

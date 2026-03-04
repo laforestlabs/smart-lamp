@@ -6,6 +6,7 @@
 #include "esp_mac.h"
 #include "esp_netif.h"
 #include "esp_event.h"
+#include "esp_random.h"
 #include "lamp_nvs.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -80,6 +81,17 @@ static esp_err_t wifi_init_sta_minimal(void)
     return ESP_OK;
 }
 
+/* ── ESP-NOW send callback (runs in WiFi task context) ── */
+
+static void esp_now_send_cb(const uint8_t *mac_addr, esp_now_send_status_t status)
+{
+    if (status == ESP_NOW_SEND_SUCCESS) {
+        ESP_LOGI(TAG, "TX ack: OK");
+    } else {
+        ESP_LOGW(TAG, "TX ack: FAIL (no ACK from peer)");
+    }
+}
+
 /* ── ESP-NOW receive callback (runs in WiFi task context) ── */
 
 static void esp_now_recv_cb(const esp_now_recv_info_t *info,
@@ -133,17 +145,25 @@ static void sync_tx_task(void *arg)
         if (xQueueReceive(s_tx_queue, &msg, portMAX_DELAY) == pdTRUE) {
             if (s_group_id == 0) continue;
 
-            /* Send 3× with staggered gaps to improve reliability under BLE coexistence.
-             * BLE connection intervals are typically 20–100 ms, so spacing retries
-             * across that range increases the chance of hitting a free coex slot.
-             * Duplicates are idempotent (same seq → same state). */
-            static const uint8_t gaps_ms[] = {25, 60};
-            for (int i = 0; i < 3; i++) {
+            /* Send 5× with jittered gaps spread over ~700 ms.
+             * BLE coexistence blocks the radio during connection events (~20–100 ms
+             * intervals). Fixed-interval retries can systematically collide with BLE
+             * slots. Adding per-retry jitter (esp_random) ensures retries are
+             * statistically independent, making all-5-fail extremely unlikely.
+             * Base gaps: 50, 80, 150, 200 ms (+0–49 ms jitter each).
+             * Duplicates are idempotent — receiver applies the same state. */
+            static const uint16_t base_gaps_ms[] = {50, 80, 150, 200};
+            for (int i = 0; i < 5; i++) {
                 esp_err_t ret = esp_now_send(broadcast, (uint8_t *)&msg, sizeof(msg));
                 if (ret != ESP_OK) {
-                    ESP_LOGW(TAG, "send failed: %s", esp_err_to_name(ret));
+                    ESP_LOGW(TAG, "send[%d] enqueue failed: %s", i, esp_err_to_name(ret));
+                } else {
+                    ESP_LOGI(TAG, "send[%d] enqueued (seq=%lu)", i, (unsigned long)msg.sequence);
                 }
-                if (i < 2) vTaskDelay(pdMS_TO_TICKS(gaps_ms[i]));
+                if (i < 4) {
+                    uint32_t jitter = esp_random() % 50;
+                    vTaskDelay(pdMS_TO_TICKS(base_gaps_ms[i] + jitter));
+                }
             }
         }
     }
@@ -159,6 +179,7 @@ esp_err_t esp_now_sync_init(QueueHandle_t sensor_queue)
     ESP_ERROR_CHECK(wifi_init_sta_minimal());
     ESP_ERROR_CHECK(esp_now_init());
     ESP_ERROR_CHECK(esp_now_register_recv_cb(esp_now_recv_cb));
+    ESP_ERROR_CHECK(esp_now_register_send_cb(esp_now_send_cb));
 
     /* Add broadcast peer */
     esp_now_peer_info_t peer = {

@@ -113,6 +113,7 @@ void lamp_control_set_flags(uint8_t flags)
 
     uint8_t old = s_flags;
     s_flags = flags;
+    s_active_scene.mode_flags = flags;
     lamp_nvs_save_mode(flags);
 
     bool old_auto  = old & MODE_FLAG_AUTO;
@@ -140,8 +141,8 @@ void lamp_control_set_flags(uint8_t flags)
         flame_mode_start();
     }
 
-    /* If neither flag: restore manual static scene */
-    if (flags == 0) {
+    /* If neither flag: restore manual static scene (only if lamp is on) */
+    if (flags == 0 && s_lamp_on) {
         apply_manual_scene();
     }
 
@@ -179,8 +180,9 @@ void lamp_control_apply_scene(const scene_t *scene)
         flame_mode_set_color(scene->warm, scene->neutral, scene->cool);
     }
 
-    if (s_flags == 0) {
-        /* Pure manual: apply directly */
+    if (s_flags == 0 && s_lamp_on) {
+        /* Pure manual: apply directly (skip if lamp is off — avoids a brief
+         * flash when called from apply_sync with lamp_on=0) */
         apply_manual_scene();
     }
     /* If auto-only or auto+flame: scene stored for next auto ON transition */
@@ -223,6 +225,7 @@ void lamp_control_set_state(uint8_t warm, uint8_t neutral, uint8_t cool, uint8_t
         }
     } else {
         /* Manual mode: apply directly */
+        s_lamp_on = (master > 0);
         apply_manual_scene();
     }
 
@@ -252,9 +255,14 @@ void lamp_control_apply_sync(const sensor_sync_data_t *sync)
     scene.flame_brightness   = sync->flame_config[7];
     scene.pir_sensitivity    = sync->pir_sensitivity;
 
-    /* Apply via the authoritative scene path: configures all sub-modules,
-     * saves to NVS, and applies LEDs for manual mode.
-     * s_from_sync=true suppresses re-broadcast throughout. */
+    /* Set lamp_on state BEFORE apply_scene so that apply_scene's LED write
+     * respects the intended on/off state.  Without this, apply_manual_scene()
+     * inside apply_scene would briefly turn the LEDs on even for lamp_on=0
+     * packets, causing a ~1ms flash on every retry (~every 100 ms) that
+     * looks like a faint glow instead of "off". */
+    s_lamp_on   = sync->lamp_on;
+    s_configured_master = sync->master;
+
     s_from_sync = true;
     lamp_control_apply_scene(&scene);
     /* apply_scene() calls auto_mode_notify_scene_change() internally — fade
@@ -271,8 +279,6 @@ void lamp_control_apply_sync(const sensor_sync_data_t *sync)
     if (!(s_flags & MODE_FLAG_AUTO) && !sync->lamp_on) {
         lamp_off();
     }
-    s_lamp_on   = sync->lamp_on;
-    s_configured_master = sync->master;  /* peer's configured master is our new target */
     s_from_sync = false;
 }
 

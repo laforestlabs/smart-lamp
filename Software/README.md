@@ -14,6 +14,8 @@ Flutter companion app for the Smart Lamp. Connects over BLE to discover, pair, a
 - **Flame mode** -- Candle-flicker animation running at 30 fps on the lamp. Five sliders control intensity, drift (calm to wild), radius (focused to diffuse), flicker depth, and flicker speed. A live grid preview shows approximate LED output.
 - **Scenes** -- Save the current LED state as a named scene (up to 16). Apply or delete saved scenes from the scene list. Applying a scene switches to manual mode.
 - **Schedules** -- Up to 7 time-based triggers. Each schedule specifies days of the week, time, and which scene to activate. Schedules are stored on the lamp.
+- **Group sync** -- Assign lamps to a sync group (1-255) so they mirror each other's state over ESP-NOW. Configure via the Group Sync screen.
+- **Lamp naming** -- Assign a custom name to each lamp, stored on-device in NVS.
 - **OTA firmware updates** -- Pick a `.bin` file from the device, stream it to the lamp over BLE, and monitor progress. The lamp reboots into the new firmware automatically.
 
 ## Architecture
