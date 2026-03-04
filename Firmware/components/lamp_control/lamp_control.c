@@ -25,8 +25,12 @@ static const char *TAG = "lamp_ctrl";
 static uint8_t          s_flags = 0;   /* bitmask: MODE_FLAG_AUTO | MODE_FLAG_FLAME */
 static bool             s_lamp_on = true;
 static bool             s_from_sync = false;  /* suppresses re-broadcast when true */
+static uint8_t          s_configured_master = 128;  /* last non-zero master; used in broadcasts when lamp is off */
 static QueueHandle_t    s_sensor_queue;
 static scene_t          s_active_scene;
+
+/* Forward declaration — defined after helpers */
+static void broadcast_current_state(void);
 
 /* ── Auto mode transition callback ── */
 
@@ -48,6 +52,10 @@ static void auto_transition_handler(auto_transition_t transition, uint8_t dim_ma
             lamp_set_master(dim_master);
             lamp_flush();
         }
+        /* Broadcast to group when lamp is fully on (not during the prep call with dim=0) */
+        if (dim_master > 0) {
+            broadcast_current_state();
+        }
         break;
 
     case AUTO_TRANSITION_DIMMING:
@@ -65,6 +73,7 @@ static void auto_transition_handler(auto_transition_t transition, uint8_t dim_ma
             flame_mode_stop();
         }
         lamp_off();
+        broadcast_current_state();
         break;
     }
 }
@@ -76,6 +85,18 @@ static void apply_manual_scene(void)
     lamp_fill(s_active_scene.warm, s_active_scene.neutral, s_active_scene.cool);
     lamp_set_master(s_active_scene.master);
     lamp_flush();
+}
+
+/* Broadcast the current full scene + lamp_on state to group peers.
+ * Suppressed when s_from_sync is set (prevents re-broadcast loops).
+ * Always sends s_configured_master (last non-zero master) so peers never
+ * receive master=0 as the scene target — lamp_on carries the on/off state. */
+static void broadcast_current_state(void)
+{
+    if (s_from_sync) return;
+    scene_t bc = s_active_scene;
+    if (bc.master == 0) bc.master = s_configured_master;
+    esp_now_sync_broadcast(&bc, s_lamp_on);
 }
 
 /* ── Public API ── */
@@ -124,11 +145,7 @@ void lamp_control_set_flags(uint8_t flags)
         apply_manual_scene();
     }
 
-    /* Broadcast to sync group (only for local changes) */
-    if (!s_from_sync) {
-        esp_now_sync_broadcast(s_active_scene.warm, s_active_scene.neutral,
-                               s_active_scene.cool, s_active_scene.master, flags);
-    }
+    broadcast_current_state();
 }
 
 void lamp_control_apply_scene(const scene_t *scene)
@@ -153,6 +170,11 @@ void lamp_control_apply_scene(const scene_t *scene)
     /* Restore mode flags stored with the scene */
     lamp_control_set_flags(scene->mode_flags);
 
+    /* Keep auto_mode's internal scene current (colors + master fade target).
+     * Must come after set_flags() in case auto_mode_enable() just reset state. */
+    auto_mode_notify_scene_change(scene->warm, scene->neutral,
+                                  scene->cool, scene->master);
+
     if (s_flags & MODE_FLAG_FLAME) {
         flame_mode_set_color(scene->warm, scene->neutral, scene->cool);
     }
@@ -170,6 +192,7 @@ void lamp_control_set_state(uint8_t warm, uint8_t neutral, uint8_t cool, uint8_t
     s_active_scene.neutral = neutral;
     s_active_scene.cool    = cool;
     s_active_scene.master  = master;
+    if (master > 0) s_configured_master = master;
     lamp_nvs_save_active_scene(&s_active_scene);
 
     ESP_LOGI(TAG, "set_state: [%d,%d,%d,%d] flags=0x%02x", warm, neutral, cool, master, s_flags);
@@ -187,6 +210,9 @@ void lamp_control_set_state(uint8_t warm, uint8_t neutral, uint8_t cool, uint8_t
             s_lamp_on = true;
         }
     } else if (s_flags & MODE_FLAG_AUTO) {
+        /* Keep auto_mode's internal scene in sync so fades target the right values.
+         * This also aborts any in-progress fade-out if master > 0. */
+        auto_mode_notify_scene_change(warm, neutral, cool, master);
         /* Auto-only mode: honour explicit on/off; apply colours when lamp is on */
         if (master == 0) {
             lamp_off();
@@ -200,35 +226,53 @@ void lamp_control_set_state(uint8_t warm, uint8_t neutral, uint8_t cool, uint8_t
         apply_manual_scene();
     }
 
-    /* Broadcast to sync group (only for local changes) */
-    if (!s_from_sync) {
-        esp_now_sync_broadcast(warm, neutral, cool, master, s_flags);
+    broadcast_current_state();
+}
+
+void lamp_control_apply_sync(const sensor_sync_data_t *sync)
+{
+    /* Build a scene from the sync data, preserving the local name. */
+    scene_t scene = s_active_scene;
+    scene.warm               = sync->warm;
+    scene.neutral            = sync->neutral;
+    scene.cool               = sync->cool;
+    scene.master             = sync->master;   /* always a configured target, never 0 */
+    scene.mode_flags         = sync->flags;
+    scene.fade_in_s          = sync->fade_in_s;
+    scene.fade_out_s         = sync->fade_out_s;
+    scene.auto_timeout_s     = sync->auto_timeout_s;
+    scene.auto_lux_threshold = sync->auto_lux_threshold;
+    scene.flame_drift_x      = sync->flame_config[0];
+    scene.flame_drift_y      = sync->flame_config[1];
+    scene.flame_restore      = sync->flame_config[2];
+    scene.flame_radius       = sync->flame_config[3];
+    scene.flame_bias_y       = sync->flame_config[4];
+    scene.flame_flicker_depth  = sync->flame_config[5];
+    scene.flame_flicker_speed  = sync->flame_config[6];
+    scene.flame_brightness   = sync->flame_config[7];
+    scene.pir_sensitivity    = sync->pir_sensitivity;
+
+    /* Apply via the authoritative scene path: configures all sub-modules,
+     * saves to NVS, and applies LEDs for manual mode.
+     * s_from_sync=true suppresses re-broadcast throughout. */
+    s_from_sync = true;
+    lamp_control_apply_scene(&scene);
+    /* apply_scene() calls auto_mode_notify_scene_change() internally — fade
+     * targets are now up to date. Handle operational on/off separately. */
+    if (s_flags & MODE_FLAG_AUTO) {
+        if (sync->lamp_on && auto_mode_get_state() == AUTO_STATE_IDLE) {
+            auto_mode_force_on();
+        } else if (!sync->lamp_on && auto_mode_get_state() != AUTO_STATE_IDLE) {
+            auto_mode_force_off();
+        }
     }
-}
-
-void lamp_control_set_state_from_sync(uint8_t warm, uint8_t neutral,
-                                      uint8_t cool, uint8_t master)
-{
-    s_from_sync = true;
-    lamp_control_set_state(warm, neutral, cool, master);
-    s_from_sync = false;
-}
-
-void lamp_control_set_flags_from_sync(uint8_t flags)
-{
-    s_from_sync = true;
-    lamp_control_set_flags(flags);
-    s_from_sync = false;
-}
-
-void lamp_control_apply_sync(uint8_t warm, uint8_t neutral, uint8_t cool,
-                              uint8_t master, uint8_t flags)
-{
-    s_from_sync = true;
-    lamp_control_set_flags(flags);
-    lamp_control_set_state(warm, neutral, cool, master);
-    /* Keep s_lamp_on in sync with the actual state */
-    s_lamp_on = (master > 0);
+    /* For manual/flame modes, apply_scene() already wrote the LEDs.
+     * If the peer's lamp is off (lamp_on=0) in manual mode, turn off locally too. */
+    if (!(s_flags & MODE_FLAG_AUTO) && !sync->lamp_on) {
+        lamp_off();
+    }
+    s_lamp_on   = sync->lamp_on;
+    s_configured_master = sync->master;  /* peer's configured master is our new target */
     s_from_sync = false;
 }
 
@@ -298,13 +342,11 @@ static void control_task(void *arg)
                 break;
 
             case SENSOR_EVT_SYNC:
-                ESP_LOGI(TAG, "Sync RX: [%d,%d,%d,%d] flags=0x%02x",
+                ESP_LOGI(TAG, "Sync RX: [%d,%d,%d,%d] flags=0x%02x lamp_on=%d",
                          evt.data.sync.warm, evt.data.sync.neutral,
                          evt.data.sync.cool, evt.data.sync.master,
-                         evt.data.sync.flags);
-                lamp_control_apply_sync(evt.data.sync.warm, evt.data.sync.neutral,
-                                        evt.data.sync.cool, evt.data.sync.master,
-                                        evt.data.sync.flags);
+                         evt.data.sync.flags, evt.data.sync.lamp_on);
+                lamp_control_apply_sync(&evt.data.sync);
                 break;
 
             case SENSOR_EVT_MOTION_START:
@@ -333,6 +375,7 @@ esp_err_t lamp_control_init(QueueHandle_t sensor_queue)
     lamp_nvs_load_active_scene(&s_active_scene);
     lamp_nvs_load_mode(&s_flags);
     s_flags &= MODE_FLAGS_MASK;
+    if (s_active_scene.master > 0) s_configured_master = s_active_scene.master;
 
     /* Apply all per-scene config from active scene */
     sensor_set_pir_sensitivity(s_active_scene.pir_sensitivity);

@@ -219,7 +219,8 @@ void auto_mode_process_event(const sensor_event_t *evt)
             /* Only activate if dark enough */
             if (s_current_lux < s_cfg.lux_threshold) {
                 ESP_LOGI(TAG, "Motion + dark (lux=%u) → fade in", s_current_lux);
-                lamp_nvs_load_active_scene(&s_active_scene);
+                /* s_active_scene is always current via auto_mode_notify_scene_change() —
+                 * no NVS load needed here. */
                 s_fade_current_master = 0;
                 start_fade_in(true);
             }
@@ -262,4 +263,57 @@ esp_err_t auto_mode_set_config(const auto_config_t *cfg)
 void auto_mode_get_config(auto_config_t *cfg)
 {
     *cfg = s_cfg;
+}
+
+void auto_mode_force_on(void)
+{
+    if (!s_enabled || s_state != AUTO_STATE_IDLE) return;
+    s_fade_current_master = 0;
+    start_fade_in(true);
+    ESP_LOGI(TAG, "Force ON (group sync)");
+}
+
+void auto_mode_force_off(void)
+{
+    if (!s_enabled) return;
+    if (s_state == AUTO_STATE_ON || s_state == AUTO_STATE_FADING_IN) {
+        esp_timer_stop(s_timeout_timer);
+        esp_timer_stop(s_fade_timer);
+        start_fade_out();
+        ESP_LOGI(TAG, "Force OFF (group sync)");
+    }
+}
+
+void auto_mode_notify_scene_change(uint8_t warm, uint8_t neutral,
+                                   uint8_t cool, uint8_t master)
+{
+    s_active_scene.warm    = warm;
+    s_active_scene.neutral = neutral;
+    s_active_scene.cool    = cool;
+    s_active_scene.master  = master;
+
+    switch (s_state) {
+    case AUTO_STATE_FADING_IN:
+        /* Redirect the in-progress fade to the new master target */
+        s_fade_target_master = master;
+        break;
+
+    case AUTO_STATE_FADING_OUT:
+        if (master > 0) {
+            /* Sync says stay on — abort fade-out and return to ON state */
+            esp_timer_stop(s_fade_timer);
+            s_state = AUTO_STATE_ON;
+            s_fade_current_master = master;
+            /* Restart inactivity timer from now */
+            esp_timer_stop(s_timeout_timer);
+            esp_timer_start_once(s_timeout_timer,
+                                 (uint64_t)s_cfg.timeout_s * 1000000);
+            ESP_LOGI(TAG, "Sync override: abort fade-out → ON (master=%u)", master);
+        }
+        break;
+
+    default:
+        /* IDLE or ON: scene values updated; lamp_control handles LEDs directly */
+        break;
+    }
 }

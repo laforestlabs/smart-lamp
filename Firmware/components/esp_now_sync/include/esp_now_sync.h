@@ -5,6 +5,7 @@
 #include "esp_err.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
+#include "lamp_nvs.h"   /* scene_t */
 
 #ifdef __cplusplus
 extern "C" {
@@ -18,12 +19,17 @@ extern "C" {
 esp_err_t esp_now_sync_init(QueueHandle_t sensor_queue);
 
 /**
- * Broadcast current lamp state to group peers.
+ * Broadcast the current scene configuration + operational state to group peers.
  * Called from lamp_control when state changes from a LOCAL source.
  * Non-blocking: overwrites any pending message in the TX queue.
+ *
+ * @param scene   Full active scene (colors, configured master, mode flags,
+ *                fade rates, auto/flame config, PIR sensitivity).
+ * @param lamp_on Whether the lamp is currently on (operational state).
+ *                Kept separate from scene->master so master is never
+ *                artificially zeroed to signal "off".
  */
-void esp_now_sync_broadcast(uint8_t warm, uint8_t neutral, uint8_t cool,
-                            uint8_t master, uint8_t flags);
+void esp_now_sync_broadcast(const scene_t *scene, bool lamp_on);
 
 /** Get current group ID (0 = disabled). */
 uint8_t esp_now_sync_get_group(void);

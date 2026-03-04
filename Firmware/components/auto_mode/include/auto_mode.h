@@ -81,6 +81,28 @@ void auto_mode_get_config(auto_config_t *cfg);
  */
 void auto_mode_set_fade_rates(uint8_t fade_in_s, uint8_t fade_out_s);
 
+/**
+ * Notify auto mode that the active scene has been updated externally (e.g. via sync).
+ * Updates the internal scene copy so fades use the correct target values.
+ * If a fade-out is in progress and master > 0, it is aborted and the lamp returns to ON.
+ */
+void auto_mode_notify_scene_change(uint8_t warm, uint8_t neutral,
+                                   uint8_t cool, uint8_t master);
+
+/**
+ * Force the lamp on immediately (bypasses PIR lux check).
+ * Used for group sync: when a peer's lamp has turned on, mirror that state.
+ * No-op if already on or not enabled.
+ */
+void auto_mode_force_on(void);
+
+/**
+ * Force the lamp off immediately (bypasses inactivity timeout).
+ * Used for group sync: when a peer's lamp has turned off, mirror that state.
+ * No-op if already off or not enabled.
+ */
+void auto_mode_force_off(void);
+
 #ifdef __cplusplus
 }
 #endif

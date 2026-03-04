@@ -5,6 +5,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "lamp_nvs.h"
+#include "sensor.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -28,6 +29,7 @@ void lamp_control_set_flags(uint8_t flags);
 
 /**
  * Apply a scene immediately (used from BLE writes and NVS restore).
+ * Atomically sets all sub-module configs (auto, flame, PIR) and applies LEDs.
  */
 void lamp_control_apply_scene(const scene_t *scene);
 
@@ -55,24 +57,12 @@ void lamp_control_update_flame_config(const flame_config_t *cfg);
 void lamp_control_set_pir_sensitivity(uint8_t level);
 
 /**
- * Apply state received from ESP-NOW sync.
- * Same as lamp_control_set_state() but does NOT re-broadcast (prevents loops).
+ * Apply a full sync event received from an ESP-NOW peer.
+ * Builds a scene from the sync data, applies it via lamp_control_apply_scene(),
+ * then handles the operational lamp_on state via auto_mode_force_on/off.
+ * Does NOT re-broadcast (prevents sync loops).
  */
-void lamp_control_set_state_from_sync(uint8_t warm, uint8_t neutral,
-                                      uint8_t cool, uint8_t master);
-
-/**
- * Apply mode flags received from ESP-NOW sync.
- * Same as lamp_control_set_flags() but does NOT re-broadcast (prevents loops).
- */
-void lamp_control_set_flags_from_sync(uint8_t flags);
-
-/**
- * Apply full state + flags from ESP-NOW sync atomically.
- * Sets flags, state, and s_lamp_on together without re-broadcasting.
- */
-void lamp_control_apply_sync(uint8_t warm, uint8_t neutral, uint8_t cool,
-                              uint8_t master, uint8_t flags);
+void lamp_control_apply_sync(const sensor_sync_data_t *sync);
 
 #ifdef __cplusplus
 }

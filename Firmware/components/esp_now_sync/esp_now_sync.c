@@ -15,7 +15,7 @@
 static const char *TAG = "esp_now_sync";
 
 #define SYNC_MAGIC      0x4C    /* 'L' for Lamp */
-#define SYNC_VERSION    0x01
+#define SYNC_VERSION    0x02    /* v2: full scene + lamp_on */
 #define MSG_STATE_SYNC  0x01
 
 #define SYNC_TASK_STACK 3072
@@ -27,12 +27,22 @@ typedef struct __attribute__((packed)) {
     uint8_t  group_id;
     uint8_t  msg_type;
     uint32_t sequence;
+    /* Scene settings */
     uint8_t  warm;
     uint8_t  neutral;
     uint8_t  cool;
-    uint8_t  master;
+    uint8_t  master;             /* configured brightness target — never 0 to signal "off" */
     uint8_t  flags;
-} sync_msg_t;
+    uint8_t  fade_in_s;
+    uint8_t  fade_out_s;
+    uint16_t auto_timeout_s;
+    uint16_t auto_lux_threshold;
+    uint8_t  flame_config[8];   /* drift_x, drift_y, restore, radius, bias_y,
+                                    flicker_depth, flicker_speed, brightness */
+    uint8_t  pir_sensitivity;
+    /* Operational state — decoupled from scene master */
+    uint8_t  lamp_on;           /* 0 = off, 1 = on */
+} sync_msg_t;                   /* 29 bytes */
 
 static uint8_t       s_group_id = 0;
 static uint32_t      s_seq = 0;
@@ -84,22 +94,30 @@ static void esp_now_recv_cb(const esp_now_recv_info_t *info,
     if (msg->group_id != s_group_id || s_group_id == 0) return;
 
     if (msg->msg_type == MSG_STATE_SYNC) {
-        ESP_LOGI(TAG, "RX from %02X:%02X seq=%lu [%d,%d,%d,%d] flags=0x%02x",
+        ESP_LOGI(TAG, "RX from %02X:%02X seq=%lu [%d,%d,%d,%d] flags=0x%02x lamp_on=%d",
                  info->src_addr[4], info->src_addr[5],
                  (unsigned long)msg->sequence,
-                 msg->warm, msg->neutral, msg->cool, msg->master, msg->flags);
+                 msg->warm, msg->neutral, msg->cool, msg->master,
+                 msg->flags, msg->lamp_on);
 
         /* Post to lamp_control task via sensor queue — never block WiFi task */
         sensor_event_t evt = {
             .type = SENSOR_EVT_SYNC,
             .data.sync = {
-                .warm    = msg->warm,
-                .neutral = msg->neutral,
-                .cool    = msg->cool,
-                .master  = msg->master,
-                .flags   = msg->flags,
+                .warm             = msg->warm,
+                .neutral          = msg->neutral,
+                .cool             = msg->cool,
+                .master           = msg->master,
+                .flags            = msg->flags,
+                .fade_in_s        = msg->fade_in_s,
+                .fade_out_s       = msg->fade_out_s,
+                .auto_timeout_s   = msg->auto_timeout_s,
+                .auto_lux_threshold = msg->auto_lux_threshold,
+                .pir_sensitivity  = msg->pir_sensitivity,
+                .lamp_on          = msg->lamp_on,
             },
         };
+        memcpy(evt.data.sync.flame_config, msg->flame_config, 8);
         xQueueSend(s_rx_queue, &evt, 0);  /* non-blocking */
     }
 }
@@ -115,15 +133,17 @@ static void sync_tx_task(void *arg)
         if (xQueueReceive(s_tx_queue, &msg, portMAX_DELAY) == pdTRUE) {
             if (s_group_id == 0) continue;
 
-            /* Send twice with a short gap to improve reliability.
-             * ESP-NOW broadcast has no ACK, so duplicates are expected
-             * and handled by the receiver (same seq → same state, idempotent). */
-            for (int i = 0; i < 2; i++) {
+            /* Send 3× with staggered gaps to improve reliability under BLE coexistence.
+             * BLE connection intervals are typically 20–100 ms, so spacing retries
+             * across that range increases the chance of hitting a free coex slot.
+             * Duplicates are idempotent (same seq → same state). */
+            static const uint8_t gaps_ms[] = {25, 60};
+            for (int i = 0; i < 3; i++) {
                 esp_err_t ret = esp_now_send(broadcast, (uint8_t *)&msg, sizeof(msg));
                 if (ret != ESP_OK) {
                     ESP_LOGW(TAG, "send failed: %s", esp_err_to_name(ret));
                 }
-                if (i == 0) vTaskDelay(pdMS_TO_TICKS(15));
+                if (i < 2) vTaskDelay(pdMS_TO_TICKS(gaps_ms[i]));
             }
         }
     }
@@ -160,23 +180,36 @@ esp_err_t esp_now_sync_init(QueueHandle_t sensor_queue)
     return ESP_OK;
 }
 
-void esp_now_sync_broadcast(uint8_t warm, uint8_t neutral, uint8_t cool,
-                            uint8_t master, uint8_t flags)
+void esp_now_sync_broadcast(const scene_t *scene, bool lamp_on)
 {
     if (s_group_id == 0) return;
 
     sync_msg_t msg = {
-        .magic    = SYNC_MAGIC,
-        .version  = SYNC_VERSION,
-        .group_id = s_group_id,
-        .msg_type = MSG_STATE_SYNC,
-        .sequence = ++s_seq,
-        .warm     = warm,
-        .neutral  = neutral,
-        .cool     = cool,
-        .master   = master,
-        .flags    = flags,
+        .magic            = SYNC_MAGIC,
+        .version          = SYNC_VERSION,
+        .group_id         = s_group_id,
+        .msg_type         = MSG_STATE_SYNC,
+        .sequence         = ++s_seq,
+        .warm             = scene->warm,
+        .neutral          = scene->neutral,
+        .cool             = scene->cool,
+        .master           = scene->master,
+        .flags            = scene->mode_flags,
+        .fade_in_s        = scene->fade_in_s,
+        .fade_out_s       = scene->fade_out_s,
+        .auto_timeout_s   = scene->auto_timeout_s,
+        .auto_lux_threshold = scene->auto_lux_threshold,
+        .pir_sensitivity  = scene->pir_sensitivity,
+        .lamp_on          = lamp_on ? 1 : 0,
     };
+    msg.flame_config[0] = scene->flame_drift_x;
+    msg.flame_config[1] = scene->flame_drift_y;
+    msg.flame_config[2] = scene->flame_restore;
+    msg.flame_config[3] = scene->flame_radius;
+    msg.flame_config[4] = scene->flame_bias_y;
+    msg.flame_config[5] = scene->flame_flicker_depth;
+    msg.flame_config[6] = scene->flame_flicker_speed;
+    msg.flame_config[7] = scene->flame_brightness;
 
     xQueueOverwrite(s_tx_queue, &msg);
 }
