@@ -156,25 +156,26 @@ static void sync_tx_task(void *arg)
         if (xQueueReceive(s_tx_queue, &msg, portMAX_DELAY) == pdTRUE) {
             if (s_group_id == 0) continue;
 
-            /* Send up to 10× with jittered gaps spread over ~1.5 s.
-             * BLE coexistence blocks the radio during connection events (~20–100 ms
-             * intervals). With measured per-retry delivery rate of ~16% under BLE
-             * load, 10 retries gives ~84% per-broadcast success vs ~60% with 5.
+            /* Send up to 12× with jittered gaps spread over ~2 s.
+             * BLE coexistence blocks the radio during connection events (~30 ms
+             * intervals on TX side) and advertising events (~100 ms on RX side).
+             * Measured per-retry delivery is ~14% under BLE load.  Front-loading
+             * the first 3 retries within ~55 ms improves best-case latency, and
+             * wider jitter (0-79 ms) decorrelates retries from periodic BLE events.
              *
              * Between retries, check if a newer message is queued (from a rapid
              * state change). If so, abandon the current retries and immediately
-             * switch to the newer message — this reduces convergence time from
-             * N×1.5 s to ~1.5 s for rapid changes. */
-            static const uint16_t base_gaps_ms[] = {30, 50, 70, 100, 130, 150, 170, 190, 200};
-            for (int i = 0; i < 10; i++) {
+             * switch to the newer message. */
+            static const uint16_t base_gaps_ms[] = {5, 15, 35, 65, 100, 140, 170, 200, 250, 300, 350};
+            for (int i = 0; i < 12; i++) {
                 esp_err_t ret = esp_now_send(broadcast, (uint8_t *)&msg, sizeof(msg));
                 if (ret != ESP_OK) {
                     ESP_LOGW(TAG, "send[%d] enqueue failed: %s", i, esp_err_to_name(ret));
                 } else {
                     ESP_LOGI(TAG, "send[%d] enqueued (seq=%lu)", i, (unsigned long)msg.sequence);
                 }
-                if (i < 9) {
-                    uint32_t jitter = esp_random() % 50;
+                if (i < 11) {
+                    uint32_t jitter = esp_random() % 80;
                     vTaskDelay(pdMS_TO_TICKS(base_gaps_ms[i] + jitter));
                     /* Check for newer message — supersedes current retries */
                     if (xQueueReceive(s_tx_queue, &msg, 0) == pdTRUE) {

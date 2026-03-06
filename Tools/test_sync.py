@@ -173,46 +173,64 @@ async def test_on_off_sync():
 
     # Ensure lamp is on first with known color
     await lamp.set_color(200, 200, 200, 200)
-    await asyncio.sleep(2.0)
+    await asyncio.sleep(3.0)  # wait for all 12 retries (~2s) + margin
     monitor.clear()
 
     # Turn off
     await lamp.turn_off()
-    rx = monitor.wait_for_sync_rx(timeout=SYNC_TIMEOUT)
 
-    if rx is None:
-        result.fail(name + " (off)", "No Sync RX for off event")
+    # Wait for a sync RX with lamp_on=0 (skip stale retries from previous state)
+    deadline = time.monotonic() + SYNC_TIMEOUT
+    rx_off = None
+    while time.monotonic() < deadline:
+        remaining = deadline - time.monotonic()
+        rx = monitor.wait_for_sync_rx(timeout=max(remaining, 0.1))
+        if rx is None:
+            break
+        if rx.lamp_on == 0:
+            rx_off = rx
+            break
+
+    if rx_off is None:
+        result.fail(name + " (off)", "No Sync RX with lamp_on=0 received")
         monitor.dump_recent()
         return
 
-    if rx.lamp_on != 0:
-        result.fail(name + " (off)", f"Expected lamp_on=0, got {rx.lamp_on}")
-        return
-
     # master should NOT be 0 (firmware uses s_configured_master)
-    if rx.master == 0:
+    if rx_off.master == 0:
         result.fail(name + " (off)", "master=0 in broadcast (should be configured master)")
         return
 
-    result.ok(name + " (off)", f"lamp_on=0, master={rx.master}")
+    result.ok(name + " (off)", f"lamp_on=0, master={rx_off.master}")
 
-    # Wait for all 10 "off" retries to finish (~1.5s) + margin before clearing
+    # Wait for all 12 "off" retries to finish (~2s) + margin before clearing
     await asyncio.sleep(3.0)
     monitor.clear()
 
     # Turn back on
     await lamp.turn_on(200)
-    rx = monitor.wait_for_sync_rx(timeout=SYNC_TIMEOUT)
 
-    if rx is None:
-        result.fail(name + " (on)", "No Sync RX for on event")
+    # Wait for a sync RX with lamp_on=1
+    deadline = time.monotonic() + SYNC_TIMEOUT
+    rx_on = None
+    while time.monotonic() < deadline:
+        remaining = deadline - time.monotonic()
+        rx = monitor.wait_for_sync_rx(timeout=max(remaining, 0.1))
+        if rx is None:
+            break
+        if rx.lamp_on == 1:
+            rx_on = rx
+            break
+
+    if rx_on is None:
+        result.fail(name + " (on)", "No Sync RX with lamp_on=1 received")
         monitor.dump_recent()
         return
 
-    if rx.lamp_on == 1 and rx.master > 0:
-        result.ok(name + " (on)", f"lamp_on=1, master={rx.master}")
+    if rx_on.master > 0:
+        result.ok(name + " (on)", f"lamp_on=1, master={rx_on.master}")
     else:
-        result.fail(name + " (on)", f"lamp_on={rx.lamp_on}, master={rx.master}")
+        result.fail(name + " (on)", f"lamp_on=1 but master=0")
 
 
 async def test_flags_sync():
@@ -438,17 +456,206 @@ async def test_rapid_convergence_time():
             f"after {elapsed_ms:.0f}ms")
 
 
+async def test_soak_reliability():
+    """Run 50 sync operations, measure delivery rate and latency distribution."""
+    name = "test_soak_reliability"
+    await reset_baseline()
+
+    N = 50
+    delivered = 0
+    latencies = []
+    failures = []
+
+    for i in range(N):
+        await asyncio.sleep(2.0)  # settle between attempts (>1.5s retry window)
+        monitor.clear()
+        w = (i * 5 + 10) % 256   # unique warm value per iteration
+        n = (i * 3 + 20) % 256   # unique neutral value
+
+        t_start = time.monotonic()
+        await lamp.set_color(w, n, 128, 200)
+
+        # Wait for matching RX on SN003
+        deadline = t_start + SYNC_TIMEOUT
+        found = False
+        while time.monotonic() < deadline:
+            remaining = deadline - time.monotonic()
+            rx = monitor.wait_for_sync_rx(timeout=max(remaining, 0.1))
+            if rx is None:
+                break
+            if rx.warm == w and rx.neutral == n:
+                latency_ms = (time.monotonic() - t_start) * 1000
+                latencies.append(latency_ms)
+                delivered += 1
+                found = True
+                break
+
+        if not found:
+            failures.append(i)
+
+        # Progress every 10
+        if (i + 1) % 10 == 0:
+            print(f"  [{name}] {i+1}/{N} done, {delivered} delivered so far")
+
+    rate = delivered / N * 100
+    if latencies:
+        latencies.sort()
+        avg = sum(latencies) / len(latencies)
+        median = latencies[len(latencies) // 2]
+        p95 = latencies[int(len(latencies) * 0.95)]
+        detail = (f"{delivered}/{N} ({rate:.0f}%), "
+                  f"avg={avg:.0f}ms, median={median:.0f}ms, "
+                  f"p95={p95:.0f}ms, best={min(latencies):.0f}ms, worst={max(latencies):.0f}ms")
+    else:
+        detail = f"0/{N} delivered"
+
+    # 80% threshold — ESP-NOW over shared BLE radio has high variance
+    if rate >= 80:
+        result.ok(name, detail)
+    else:
+        result.fail(name, detail)
+
+    if failures:
+        print(f"  Failed iterations: {failures[:20]}{'...' if len(failures) > 20 else ''}")
+
+
+async def test_rapid_burst():
+    """Fire 20 rapid changes with no delay, verify convergence to final value."""
+    name = "test_rapid_burst"
+    await reset_baseline()
+    monitor.clear()
+
+    BURST_SIZE = 20
+    t_start = time.monotonic()
+    for i in range(BURST_SIZE):
+        w = 10 + i * 12  # 10, 22, 34, ... 238
+        await lamp.set_color(w, w, w, 200)
+        # No sleep — as fast as BLE writes complete
+
+    final_w = 10 + (BURST_SIZE - 1) * 12  # 238
+
+    # Wait for convergence
+    deadline = t_start + 15.0
+    all_rx = []
+    converged = False
+    while time.monotonic() < deadline:
+        remaining = deadline - time.monotonic()
+        rx = monitor.wait_for_sync_rx(timeout=min(remaining, 1.0))
+        if rx is not None:
+            all_rx.append(rx)
+            if rx.warm == final_w:
+                converged = True
+                break
+
+    elapsed_ms = (time.monotonic() - t_start) * 1000
+    unique = len({r.warm for r in all_rx})
+
+    if converged:
+        result.ok(name, f"Converged to {final_w} in {elapsed_ms:.0f}ms "
+                        f"({len(all_rx)} events, {unique} unique values)")
+    else:
+        last = all_rx[-1] if all_rx else None
+        last_str = f"[{last.warm},{last.neutral},{last.cool}]" if last else "none"
+        result.fail(name, f"Not converged after {elapsed_ms:.0f}ms. "
+                         f"Last: {last_str}, {len(all_rx)} events, {unique} unique")
+
+
+async def test_per_retry_delivery_rate():
+    """Measure how many of 10 TX retries arrive at SN003 per message."""
+    name = "test_per_retry_delivery_rate"
+    await reset_baseline()
+
+    trials = 10
+    retry_counts = []
+
+    for trial in range(trials):
+        await asyncio.sleep(2.5)  # let previous retries fully drain
+        monitor.clear()
+        w = 30 + trial * 20  # unique per trial: 30, 50, 70, ...
+
+        await lamp.set_color(w, w, w, 200)
+
+        # Wait for all 10 retries to complete (~1.5s) + margin
+        await asyncio.sleep(2.0)
+
+        # Collect all RX events that arrived
+        all_rx = monitor.collect_espnow_rx(timeout=0.5)
+        # Count events matching our target value
+        matching = [r for r in all_rx if r["warm"] == w]
+        retry_counts.append(len(matching))
+
+    if not retry_counts:
+        result.fail(name, "No RX events captured")
+        return
+
+    avg_received = sum(retry_counts) / len(retry_counts)
+    per_retry_rate = avg_received / 10.0 * 100
+
+    detail = (f"{len(retry_counts)} trials, avg {avg_received:.1f}/10 retries received "
+              f"({per_retry_rate:.0f}% per-retry), "
+              f"min={min(retry_counts)}, max={max(retry_counts)}")
+
+    # Informational — always pass since per-retry rate is highly variable
+    # (6-48% observed). Aggregate delivery is tested by test_soak_reliability.
+    result.ok(name, detail)
+
+
+async def test_on_off_rapid_toggle():
+    """Rapidly toggle on/off 10 times, verify final state propagates."""
+    name = "test_on_off_rapid_toggle"
+    await reset_baseline()
+
+    # Ensure we start "on" with known color
+    await lamp.set_color(200, 200, 200, 200)
+    await asyncio.sleep(3.0)
+    monitor.clear()
+
+    TOGGLES = 10
+    t_start = time.monotonic()
+    for i in range(TOGGLES):
+        if i % 2 == 0:
+            await lamp.turn_off()
+        else:
+            await lamp.turn_on(200)
+        await asyncio.sleep(0.1)
+
+    # Final state: TOGGLES=10, last action (i=9, odd) is turn_on → lamp_on=1
+    final_expected_on = 1
+
+    # Wait for convergence — use long timeout due to high latency variance
+    deadline = t_start + 20.0
+    final_rx = None
+    while time.monotonic() < deadline:
+        rx = monitor.wait_for_sync_rx(timeout=1.0)
+        if rx is not None:
+            final_rx = rx
+            if rx.lamp_on == final_expected_on:
+                break
+
+    elapsed = (time.monotonic() - t_start) * 1000
+
+    if final_rx and final_rx.lamp_on == final_expected_on:
+        result.ok(name, f"Converged to lamp_on={final_expected_on} in {elapsed:.0f}ms")
+    else:
+        got = final_rx.lamp_on if final_rx else "none"
+        result.fail(name, f"Expected lamp_on={final_expected_on}, got {got} after {elapsed:.0f}ms")
+
+
 # ── Test Registry ──
 
 ALL_TESTS = [
-    ("test_color_sync",            test_color_sync),
-    ("test_on_off_sync",           test_on_off_sync),
-    ("test_flags_sync",            test_flags_sync),
-    ("test_full_scene_sync",       test_full_scene_sync),
-    ("test_rapid_changes",         test_rapid_changes),
-    ("test_group_isolation",       test_group_isolation),
-    ("test_sync_latency",          test_sync_latency),
-    ("test_rapid_convergence_time", test_rapid_convergence_time),
+    ("test_color_sync",              test_color_sync),
+    ("test_on_off_sync",             test_on_off_sync),
+    ("test_flags_sync",              test_flags_sync),
+    ("test_full_scene_sync",         test_full_scene_sync),
+    ("test_rapid_changes",           test_rapid_changes),
+    ("test_group_isolation",         test_group_isolation),
+    ("test_sync_latency",            test_sync_latency),
+    ("test_rapid_convergence_time",  test_rapid_convergence_time),
+    ("test_soak_reliability",        test_soak_reliability),
+    ("test_rapid_burst",             test_rapid_burst),
+    ("test_per_retry_delivery_rate", test_per_retry_delivery_rate),
+    ("test_on_off_rapid_toggle",     test_on_off_rapid_toggle),
 ]
 
 

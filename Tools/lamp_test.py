@@ -321,6 +321,37 @@ class SerialMonitor:
             )
         return None
 
+    def wait_for_espnow_rx(self, timeout: float = 5.0):
+        """Wait for an 'RX from' log line (esp_now_sync level) and parse it.
+        Returns dict with keys: mac, seq, warm, neutral, cool, master, flags, lamp_on.
+        """
+        m = self.wait_for(self.ESPNOW_RX_RE.pattern, timeout)
+        if m:
+            return {
+                "mac": m.group(1),
+                "seq": int(m.group(2)),
+                "warm": int(m.group(3)),
+                "neutral": int(m.group(4)),
+                "cool": int(m.group(5)),
+                "master": int(m.group(6)),
+                "flags": int(m.group(7), 16),
+                "lamp_on": int(m.group(8)),
+            }
+        return None
+
+    def collect_espnow_rx(self, timeout: float = 3.0) -> list[dict]:
+        """Collect all 'RX from' lines within timeout window.
+        Returns list of parsed dicts (same format as wait_for_espnow_rx)."""
+        results = []
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            remaining = deadline - time.monotonic()
+            rx = self.wait_for_espnow_rx(timeout=max(remaining, 0.1))
+            if rx is None:
+                break
+            results.append(rx)
+        return results
+
     def dump_recent(self, max_lines: int = 20):
         """Print recent lines for debugging."""
         with self._lock:
