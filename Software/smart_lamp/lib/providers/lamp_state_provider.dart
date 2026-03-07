@@ -7,6 +7,7 @@ import '../ble/ble_service.dart';
 import '../ble/ble_uuids.dart';
 import '../ble/ble_connection_manager.dart';
 import '../models/lamp_state.dart';
+import '../utils/circadian.dart';
 import '../utils/debouncer.dart';
 import 'ble_provider.dart';
 
@@ -109,6 +110,11 @@ class ModeFlagsNotifier extends StateNotifier<ModeFlags> {
     await _writeFlags();
   }
 
+  Future<void> setCircadian(bool enabled) async {
+    state = state.copyWith(circadianEnabled: enabled);
+    await _writeFlags();
+  }
+
   Future<void> _writeFlags() async {
     final deviceId = _connManager.deviceId;
     if (deviceId == null) return;
@@ -134,4 +140,56 @@ final modeFlagsProvider =
     ref.watch(bleServiceProvider),
     ref.watch(connectionManagerProvider),
   );
+});
+
+class CircadianTimerNotifier extends StateNotifier<bool> {
+  final Ref _ref;
+  Timer? _timer;
+
+  CircadianTimerNotifier(this._ref) : super(false) {
+    _ref.listen<ModeFlags>(modeFlagsProvider, (prev, next) {
+      if (next.circadianEnabled && !state) {
+        _start();
+      } else if (!next.circadianEnabled && state) {
+        _stop();
+      }
+    });
+    if (_ref.read(modeFlagsProvider).circadianEnabled) {
+      _start();
+    }
+  }
+
+  void _start() {
+    state = true;
+    _applyCircadian();
+    _timer = Timer.periodic(const Duration(seconds: 60), (_) {
+      _applyCircadian();
+    });
+  }
+
+  void _stop() {
+    state = false;
+    _timer?.cancel();
+    _timer = null;
+  }
+
+  void _applyCircadian() {
+    final (:warm, :neutral, :cool) =
+        CircadianCalculator.calculate(DateTime.now());
+    final notifier = _ref.read(lampStateProvider.notifier);
+    notifier.setWarm(warm);
+    notifier.setNeutral(neutral);
+    notifier.setCool(cool);
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+}
+
+final circadianTimerProvider =
+    StateNotifierProvider<CircadianTimerNotifier, bool>((ref) {
+  return CircadianTimerNotifier(ref);
 });

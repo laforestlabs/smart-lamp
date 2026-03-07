@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 
@@ -146,6 +147,14 @@ class BleConnectionManager {
     } catch (e) {
       // Non-fatal — we'll work with whatever we got
     }
+
+    // Sync wall-clock time to firmware for circadian mode
+    try {
+      final epoch = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      final bytes = ByteData(4)..setUint32(0, epoch, Endian.little);
+      await _bleService.writeCharacteristic(
+        deviceId, BleUuids.timeSync, bytes.buffer.asUint8List());
+    } catch (_) {}
 
     // Push initial state through streams so existing notifiers pick it up
     if (initialLedState != null) _ledStateController.add(initialLedState!);

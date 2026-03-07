@@ -6,12 +6,14 @@ class ModeToggles extends StatelessWidget {
   final ModeFlags flags;
   final ValueChanged<bool> onAutoChanged;
   final ValueChanged<bool> onFlameChanged;
+  final ValueChanged<bool> onCircadianChanged;
 
   const ModeToggles({
     super.key,
     required this.flags,
     required this.onAutoChanged,
     required this.onFlameChanged,
+    required this.onCircadianChanged,
   });
 
   @override
@@ -33,6 +35,13 @@ class ModeToggles extends StatelessWidget {
             secondary: const Icon(Icons.local_fire_department),
             value: flags.flameEnabled,
             onChanged: onFlameChanged,
+          ),
+          SwitchListTile(
+            title: const Text('Circadian'),
+            subtitle: const Text('Auto colour temperature by time of day'),
+            secondary: const Icon(Icons.wb_twilight),
+            value: flags.circadianEnabled,
+            onChanged: onCircadianChanged,
           ),
         ],
       ),

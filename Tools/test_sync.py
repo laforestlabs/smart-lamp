@@ -20,7 +20,7 @@ import traceback
 from lamp_test import (
     LampBLE, SerialMonitor, SyncRxEvent,
     SN001_MAC, SN003_MAC, SERIAL_PORT,
-    MODE_FLAG_AUTO, MODE_FLAG_FLAME,
+    MODE_FLAG_AUTO, MODE_FLAG_FLAME, MODE_FLAG_CIRCADIAN,
 )
 
 # ── Test Infrastructure ──
@@ -643,10 +643,32 @@ async def test_on_off_rapid_toggle():
 
 # ── Test Registry ──
 
+async def test_circadian_flag_sync():
+    """Verify CIRCADIAN flag (0x04) propagates via ESP-NOW."""
+    name = "test_circadian_flag_sync"
+
+    await reset_baseline()
+
+    monitor.clear()
+    await lamp.set_flags(MODE_FLAG_CIRCADIAN)
+    rx = monitor.wait_for_sync_rx(timeout=SYNC_TIMEOUT)
+    if rx is None:
+        result.fail(name, "No Sync RX for CIRCADIAN flag change")
+        monitor.dump_recent()
+    elif rx.flags & MODE_FLAG_CIRCADIAN:
+        result.ok(name, f"flags=0x{rx.flags:02x}")
+    else:
+        result.fail(name, f"Expected CIRCADIAN flag set, got flags=0x{rx.flags:02x}")
+
+    # Clean up
+    await reset_baseline()
+
+
 ALL_TESTS = [
     ("test_color_sync",              test_color_sync),
     ("test_on_off_sync",             test_on_off_sync),
     ("test_flags_sync",              test_flags_sync),
+    ("test_circadian_flag_sync",     test_circadian_flag_sync),
     ("test_full_scene_sync",         test_full_scene_sync),
     ("test_rapid_changes",           test_rapid_changes),
     ("test_group_isolation",         test_group_isolation),

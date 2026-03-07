@@ -21,6 +21,7 @@ class BleUuids {
   static final deviceInfo = Uuid.parse('F000AA0D-$_base');
   static final syncConfig = Uuid.parse('F000AA0E-$_base');
   static final lampName = Uuid.parse('F000AA0F-$_base');
+  static final timeSync = Uuid.parse('F000AA10-$_base');
 
   static QualifiedCharacteristic chr(String deviceId, Uuid charUuid) {
     return QualifiedCharacteristic(

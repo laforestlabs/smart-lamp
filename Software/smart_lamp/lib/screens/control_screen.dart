@@ -65,6 +65,7 @@ class ControlScreen extends ConsumerWidget {
     final connState = ref.watch(connectionStateProvider);
     final flags = ref.watch(modeFlagsProvider);
     final ledState = ref.watch(lampStateProvider);
+    ref.watch(circadianTimerProvider);
     final syncConfig = ref.watch(syncConfigProvider);
     final lampName = ref.watch(lampNameProvider);
     final lamps = ref.watch(deviceListProvider);
@@ -118,6 +119,8 @@ class ControlScreen extends ConsumerWidget {
                 ref.read(modeFlagsProvider.notifier).setAuto(v),
             onFlameChanged: (v) =>
                 ref.read(modeFlagsProvider.notifier).setFlame(v),
+            onCircadianChanged: (v) =>
+                ref.read(modeFlagsProvider.notifier).setCircadian(v),
           ),
           const Divider(),
           Padding(
@@ -160,23 +163,43 @@ class ControlScreen extends ConsumerWidget {
             child: Text('Colour Temperature',
                 style: Theme.of(context).textTheme.titleSmall),
           ),
-          ChannelSlider(
-            label: 'Warm',
-            value: ledState.warm,
-            color: Colors.amber,
-            onChanged: (v) => ref.read(lampStateProvider.notifier).setWarm(v),
-          ),
-          ChannelSlider(
-            label: 'Neutral',
-            value: ledState.neutral,
-            color: Colors.white70,
-            onChanged: (v) => ref.read(lampStateProvider.notifier).setNeutral(v),
-          ),
-          ChannelSlider(
-            label: 'Cool',
-            value: ledState.cool,
-            color: Colors.lightBlue,
-            onChanged: (v) => ref.read(lampStateProvider.notifier).setCool(v),
+          if (flags.circadianEnabled)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Text(
+                'Adjusting colour automatically based on time of day',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+            ),
+          Opacity(
+            opacity: flags.circadianEnabled ? 0.5 : 1.0,
+            child: IgnorePointer(
+              ignoring: flags.circadianEnabled,
+              child: Column(
+                children: [
+                  ChannelSlider(
+                    label: 'Warm',
+                    value: ledState.warm,
+                    color: Colors.amber,
+                    onChanged: (v) => ref.read(lampStateProvider.notifier).setWarm(v),
+                  ),
+                  ChannelSlider(
+                    label: 'Neutral',
+                    value: ledState.neutral,
+                    color: Colors.white70,
+                    onChanged: (v) => ref.read(lampStateProvider.notifier).setNeutral(v),
+                  ),
+                  ChannelSlider(
+                    label: 'Cool',
+                    value: ledState.cool,
+                    color: Colors.lightBlue,
+                    onChanged: (v) => ref.read(lampStateProvider.notifier).setCool(v),
+                  ),
+                ],
+              ),
+            ),
           ),
           const Divider(),
           Padding(

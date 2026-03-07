@@ -18,9 +18,14 @@ extern "C" {
 esp_err_t lamp_control_init(QueueHandle_t sensor_queue);
 
 /**
- * Get the current mode flags bitmask (MODE_FLAG_AUTO | MODE_FLAG_FLAME).
+ * Get the current mode flags bitmask.
  */
 uint8_t lamp_control_get_flags(void);
+
+/**
+ * Get the active scene's master brightness (0–255).
+ */
+uint8_t lamp_control_get_master(void);
 
 /**
  * Set mode flags bitmask.  Independently starts/stops auto and flame.

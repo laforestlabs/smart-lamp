@@ -79,9 +79,10 @@ typedef struct {
 } flame_config_t;
 
 /* Lamp mode flags (bitmask) */
-#define MODE_FLAG_AUTO   (1 << 0)   /* 0x01 */
-#define MODE_FLAG_FLAME  (1 << 1)   /* 0x02 */
-#define MODE_FLAGS_MASK  (MODE_FLAG_AUTO | MODE_FLAG_FLAME)
+#define MODE_FLAG_AUTO      (1 << 0)   /* 0x01 */
+#define MODE_FLAG_FLAME     (1 << 1)   /* 0x02 */
+#define MODE_FLAG_CIRCADIAN (1 << 2)   /* 0x04 — app-side only, firmware passes through */
+#define MODE_FLAGS_MASK     (MODE_FLAG_AUTO | MODE_FLAG_FLAME | MODE_FLAG_CIRCADIAN)
 
 /**
  * Initialise NVS flash.  Must be called before any other lamp_nvs function.

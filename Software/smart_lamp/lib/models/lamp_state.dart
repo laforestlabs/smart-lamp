@@ -1,21 +1,31 @@
 class ModeFlags {
   final bool autoEnabled;
   final bool flameEnabled;
+  final bool circadianEnabled;
 
-  const ModeFlags({this.autoEnabled = false, this.flameEnabled = false});
+  const ModeFlags({
+    this.autoEnabled = false,
+    this.flameEnabled = false,
+    this.circadianEnabled = false,
+  });
 
-  ModeFlags copyWith({bool? autoEnabled, bool? flameEnabled}) {
+  ModeFlags copyWith({bool? autoEnabled, bool? flameEnabled, bool? circadianEnabled}) {
     return ModeFlags(
       autoEnabled: autoEnabled ?? this.autoEnabled,
       flameEnabled: flameEnabled ?? this.flameEnabled,
+      circadianEnabled: circadianEnabled ?? this.circadianEnabled,
     );
   }
 
-  int toByte() => (autoEnabled ? 0x01 : 0) | (flameEnabled ? 0x02 : 0);
+  int toByte() =>
+      (autoEnabled ? 0x01 : 0) |
+      (flameEnabled ? 0x02 : 0) |
+      (circadianEnabled ? 0x04 : 0);
 
   factory ModeFlags.fromByte(int byte) => ModeFlags(
         autoEnabled: (byte & 0x01) != 0,
         flameEnabled: (byte & 0x02) != 0,
+        circadianEnabled: (byte & 0x04) != 0,
       );
 
   @override
@@ -23,10 +33,11 @@ class ModeFlags {
       identical(this, other) ||
       other is ModeFlags &&
           autoEnabled == other.autoEnabled &&
-          flameEnabled == other.flameEnabled;
+          flameEnabled == other.flameEnabled &&
+          circadianEnabled == other.circadianEnabled;
 
   @override
-  int get hashCode => Object.hash(autoEnabled, flameEnabled);
+  int get hashCode => Object.hash(autoEnabled, flameEnabled, circadianEnabled);
 }
 
 class LedState {

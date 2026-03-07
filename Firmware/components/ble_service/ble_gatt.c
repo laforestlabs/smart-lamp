@@ -14,6 +14,7 @@
 #include "auto_mode.h"
 #include "flame_mode.h"
 #include "esp_now_sync.h"
+#include "circadian_mode.h"
 
 static const char *TAG = "ble_gatt";
 
@@ -33,6 +34,7 @@ uint16_t g_flame_config_handle;
 uint16_t g_device_info_handle;
 uint16_t g_sync_config_handle;
 uint16_t g_lamp_name_handle;
+uint16_t g_time_sync_handle;
 
 /* Firmware version string */
 #define FW_VERSION "1.0.0"
@@ -456,6 +458,21 @@ static int lamp_name_access(uint16_t conn_handle, uint16_t attr_handle,
     return BLE_ATT_ERR_UNLIKELY;
 }
 
+/* ── Time Sync (0010): W — 4 bytes unix epoch (u32 LE) ── */
+
+static int time_sync_access(uint16_t conn_handle, uint16_t attr_handle,
+                             struct ble_gatt_access_ctxt *ctxt, void *arg)
+{
+    if (ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR) {
+        if (OS_MBUF_PKTLEN(ctxt->om) < 4) return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+        uint32_t epoch;
+        os_mbuf_copydata(ctxt->om, 0, 4, &epoch);
+        circadian_mode_set_time(epoch);
+        return 0;
+    }
+    return BLE_ATT_ERR_UNLIKELY;
+}
+
 /* ═══════════════════════ GATT Service Definition ═══════════════════════ */
 
 static const ble_uuid128_t svc_uuid = SVC_UUID_BASE;
@@ -475,6 +492,7 @@ static const ble_uuid128_t chr_flame_config_uuid     = CHR_UUID(0xAA, 0x0C);
 static const ble_uuid128_t chr_device_info_uuid      = CHR_UUID(0xAA, 0x0D);
 static const ble_uuid128_t chr_sync_config_uuid      = CHR_UUID(0xAA, 0x0E);
 static const ble_uuid128_t chr_lamp_name_uuid        = CHR_UUID(0xAA, 0x0F);
+static const ble_uuid128_t chr_time_sync_uuid        = CHR_UUID(0xAA, 0x10);
 
 static const struct ble_gatt_svc_def s_gatt_svcs[] = {
     {
@@ -570,6 +588,12 @@ static const struct ble_gatt_svc_def s_gatt_svcs[] = {
                 .access_cb  = lamp_name_access,
                 .val_handle = &g_lamp_name_handle,
                 .flags      = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_WRITE,
+            },
+            { /* Time Sync (0010) */
+                .uuid       = &chr_time_sync_uuid.u,
+                .access_cb  = time_sync_access,
+                .val_handle = &g_time_sync_handle,
+                .flags      = BLE_GATT_CHR_F_WRITE,
             },
             { 0 }, /* terminator */
         },

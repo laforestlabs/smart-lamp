@@ -35,6 +35,7 @@ class ScenesScreen extends ConsumerWidget {
                     final flags = ModeFlags.fromByte(scene.modeFlags);
                     ref.read(modeFlagsProvider.notifier).setAuto(flags.autoEnabled);
                     ref.read(modeFlagsProvider.notifier).setFlame(flags.flameEnabled);
+                    ref.read(modeFlagsProvider.notifier).setCircadian(flags.circadianEnabled);
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(content: Text('Applied: ${scene.name}')),
                     );

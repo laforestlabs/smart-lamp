@@ -4,6 +4,7 @@
 #include "lamp_nvs.h"
 #include "auto_mode.h"
 #include "flame_mode.h"
+#include "circadian_mode.h"
 #include "esp_now_sync.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -106,6 +107,11 @@ uint8_t lamp_control_get_flags(void)
     return s_flags;
 }
 
+uint8_t lamp_control_get_master(void)
+{
+    return s_active_scene.master;
+}
+
 void lamp_control_set_flags(uint8_t flags)
 {
     flags &= MODE_FLAGS_MASK;
@@ -120,6 +126,8 @@ void lamp_control_set_flags(uint8_t flags)
     bool new_auto  = flags & MODE_FLAG_AUTO;
     bool old_flame = old & MODE_FLAG_FLAME;
     bool new_flame = flags & MODE_FLAG_FLAME;
+    bool old_circ  = old & MODE_FLAG_CIRCADIAN;
+    bool new_circ  = flags & MODE_FLAG_CIRCADIAN;
 
     ESP_LOGI(TAG, "Flags change: 0x%02x → 0x%02x", old, flags);
 
@@ -130,6 +138,9 @@ void lamp_control_set_flags(uint8_t flags)
     if (old_flame && !new_flame) {
         flame_mode_stop();
     }
+    if (old_circ && !new_circ) {
+        circadian_mode_disable();
+    }
 
     /* Start what is now needed */
     if (new_auto && !old_auto) {
@@ -139,6 +150,9 @@ void lamp_control_set_flags(uint8_t flags)
         flame_mode_set_color(s_active_scene.warm, s_active_scene.neutral,
                              s_active_scene.cool);
         flame_mode_start();
+    }
+    if (new_circ && !old_circ) {
+        circadian_mode_enable();
     }
 
     /* If neither flag: restore manual static scene (only if lamp is on) */
@@ -400,6 +414,7 @@ esp_err_t lamp_control_init(QueueHandle_t sensor_queue)
     auto_mode_set_config(&ac);
     auto_mode_set_fade_rates(s_active_scene.fade_in_s, s_active_scene.fade_out_s);
     flame_mode_set_config(&fc);
+    circadian_mode_init();
 
     /* Apply saved flags */
     s_lamp_on = true;
@@ -411,7 +426,10 @@ esp_err_t lamp_control_init(QueueHandle_t sensor_queue)
                              s_active_scene.cool);
         flame_mode_start();
     }
-    if (s_flags == 0) {
+    if (s_flags & MODE_FLAG_CIRCADIAN) {
+        circadian_mode_enable();
+    }
+    if (!(s_flags & (MODE_FLAG_AUTO | MODE_FLAG_FLAME | MODE_FLAG_CIRCADIAN))) {
         apply_manual_scene();
     }
 
