@@ -250,6 +250,18 @@ class SerialMonitor:
         self._thread.start()
         print(f"[Serial] Monitoring {port} @ {baud}")
 
+    def reset_device(self):
+        """Reset the ESP32 using the esptool hard_reset sequence.
+        Toggles RTS to pull EN low then release, causing a reboot."""
+        if not self._serial or not self._serial.is_open:
+            return
+        self._serial.setDTR(False)
+        self._serial.setRTS(True)   # EN → LOW (reset)
+        time.sleep(0.2)
+        self._serial.setRTS(False)  # EN → HIGH (boot)
+        time.sleep(0.1)
+        self.clear()
+
     def stop(self):
         """Stop monitoring and close port."""
         self._running = False

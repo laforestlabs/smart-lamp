@@ -108,10 +108,9 @@ async def setup():
         print("[Setup] Assuming SN003 is already in group 1 (check serial output)")
 
     # BLE connection changes SN003's WiFi channel, breaking ESP-NOW.
-    # Reset SN003 via DTR toggle so WiFi re-initializes on channel 1.
-    print("[Setup] Resetting SN003 (DTR toggle) to restore WiFi channel...")
-    monitor.stop()
-    monitor.start(SERIAL_PORT)
+    # Reset SN003 via explicit DTR/RTS pulse so WiFi re-initializes on channel 1.
+    print("[Setup] Resetting SN003 (DTR/RTS pulse) to restore WiFi channel...")
+    monitor.reset_device()
     boot_done = monitor.wait_for("ESP-NOW sync init", timeout=8.0)
     if boot_done:
         print("[Setup] SN003 rebooted, ESP-NOW ready")

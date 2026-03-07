@@ -48,6 +48,7 @@ typedef struct __attribute__((packed)) {
 
 static uint8_t       s_group_id = 0;
 static uint32_t      s_seq = 0;
+static uint32_t      s_last_rx_seq = UINT32_MAX; /* last applied RX sequence (dedup) */
 static uint8_t       s_own_mac[6];
 static QueueHandle_t s_tx_queue;
 static QueueHandle_t s_rx_queue;   /* sensor queue for deferred sync processing */
@@ -123,6 +124,13 @@ static void esp_now_recv_cb(const esp_now_recv_info_t *info,
                  msg->warm, msg->neutral, msg->cool, msg->master,
                  msg->flags, msg->lamp_on);
 
+        /* Deduplicate: skip if same sequence as last applied (retry of same msg) */
+        if (msg->sequence == s_last_rx_seq) {
+            ESP_LOGD(TAG, "Dup seq=%lu ignored", (unsigned long)msg->sequence);
+            return;
+        }
+        s_last_rx_seq = msg->sequence;
+
         /* Post to lamp_control task via sensor queue — never block WiFi task */
         sensor_event_t evt = {
             .type = SENSOR_EVT_SYNC,
@@ -175,7 +183,12 @@ static void sync_tx_task(void *arg)
                     ESP_LOGI(TAG, "send[%d] enqueued (seq=%lu)", i, (unsigned long)msg.sequence);
                 }
                 if (i < 11) {
-                    uint32_t jitter = esp_random() % 80;
+                    /* Tighter jitter for first 3 retries to keep them in a
+                     * predictable front-loaded window (~5-75ms total).
+                     * Later retries use wider jitter (0-79ms) to decorrelate
+                     * from periodic BLE connection events (~45ms intervals). */
+                    uint32_t jitter = (i < 3) ? (esp_random() % 20)
+                                              : (esp_random() % 80);
                     vTaskDelay(pdMS_TO_TICKS(base_gaps_ms[i] + jitter));
                     /* Check for newer message — supersedes current retries */
                     if (xQueueReceive(s_tx_queue, &msg, 0) == pdTRUE) {
