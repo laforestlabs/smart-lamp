@@ -12,6 +12,7 @@ Flutter companion app for the Smart Lamp. Connects over BLE to discover, pair, a
 - **Manual control** -- Three independent channel sliders (warm, neutral, cool) plus a master brightness slider. Changes are debounced and sent over BLE in real time.
 - **Auto mode** -- PIR + ambient light driven automatic lighting. Configure lux threshold, motion timeout, dim level, and dim duration. Live sensor readout (lux + motion state) displayed in the settings screen.
 - **Flame mode** -- Candle-flicker animation running at 30 fps on the lamp. Five sliders control intensity, drift (calm to wild), radius (focused to diffuse), flicker depth, and flicker speed. A live grid preview shows approximate LED output.
+- **Circadian mode** -- Automatic colour temperature adjustment based on time of day.
 - **Scenes** -- Save the current LED state as a named scene (up to 16). Apply or delete saved scenes from the scene list. Applying a scene switches to manual mode.
 - **Schedules** -- Up to 7 time-based triggers. Each schedule specifies days of the week, time, and which scene to activate. Schedules are stored on the lamp.
 - **Group sync** -- Assign lamps to a sync group (1-255) so they mirror each other's state over ESP-NOW. Configure via the Group Sync screen.
@@ -27,7 +28,7 @@ lib/
   |
   ble/
     ble_uuids.dart              GATT service & characteristic UUID constants
-    ble_codec.dart              Encode/decode payloads for all 12 characteristics
+    ble_codec.dart              Encode/decode payloads for all 15 characteristics
     ble_service.dart            Low-level flutter_reactive_ble wrapper
     ble_connection_manager.dart Session lifecycle, initial reads, notification routing
   |
@@ -61,59 +62,89 @@ lib/
     schedules_screen.dart       Schedule list with day picker + time picker
     ota_screen.dart             File picker + progress bar for firmware update
   |
-  widgets/
-    channel_slider.dart         Warm/neutral/cool color slider
-    brightness_slider.dart      Master brightness slider
-    mode_picker.dart            SegmentedButton for manual/auto/flame
-    flame_grid_preview.dart     CustomPainter showing approximate LED grid
-    scene_card.dart             Scene list item with apply/delete actions
-    schedule_tile.dart          Schedule list item with toggle/edit/delete
-    day_of_week_selector.dart   Day-of-week chip selector
-    save_scene_dialog.dart      Dialog to name and save current state as scene
-    lamp_card.dart              Home screen device card with connection state
-  |
-  storage/
-    local_storage.dart          SharedPreferences wrapper for bonded lamp list
-  |
-  theme/
-    app_theme.dart              Material 3 dark theme, amber seed color
-  |
-  utils/
-    debouncer.dart              Timer-based debouncer (50 ms default)
+  widgets/                      Reusable UI components (sliders, cards, pickers)
+  storage/                      SharedPreferences wrapper for bonded lamp list
+  theme/                        Material 3 dark theme, amber seed color
+  utils/                        Timer-based debouncer (50 ms default)
 ```
+
+### BLE Communication
+
+The BLE layer is a three-tier stack that separates transport, encoding, and session management:
+
+```mermaid
+graph TD
+    UI[Screen / Widget] -->|user action| SN[StateNotifier<br>Riverpod]
+    SN -->|debounced write| CM[BleConnectionManager<br>session lifecycle]
+    CM --> CODEC[BleCodec<br>encode / decode]
+    CODEC --> SVC[BleService<br>raw GATT ops]
+    SVC --> RBL[flutter_reactive_ble]
+    RBL <-->|BLE| LAMP[Smart Lamp]
+
+    LAMP -->|notification| RBL
+    RBL --> SVC
+    SVC --> CM
+    CM -->|stream| SN
+    SN -->|state change| UI
+```
+
+1. **BleService** (`ble_service.dart`) -- Thin wrapper around `flutter_reactive_ble`. Handles scanning, connecting, MTU negotiation, and raw read/write/subscribe operations.
+
+2. **BleCodec** (`ble_codec.dart`) -- Serializes and deserializes all 15 GATT characteristic payloads. Little-endian byte encoding matching the firmware's wire format.
+
+3. **BleConnectionManager** (`ble_connection_manager.dart`) -- Manages the full connection lifecycle: connect, negotiate MTU (512), read initial state for all characteristics, subscribe to notifications (LED state, sensor data, scene list, schedule list, OTA status), and broadcast connection state changes.
 
 ### State Management
 
-The app uses [Riverpod](https://riverpod.dev/) for state management. Each lamp subsystem (LED state, mode, auto config, flame config, scenes, schedules) has its own `StateNotifier` that:
+The app uses [Riverpod](https://riverpod.dev/) for state management. Each lamp subsystem has its own `StateNotifier`:
+
+```mermaid
+graph LR
+    subgraph "User Action"
+        SLIDER[Slider drag]
+        TAP[Button tap]
+    end
+
+    subgraph "State Layer"
+        NOTIF[StateNotifier]
+        DEB[Debouncer<br>50 ms]
+    end
+
+    subgraph "BLE Layer"
+        WRITE[BLE Write]
+        READ[BLE Notification]
+    end
+
+    subgraph "Lamp"
+        FW[Firmware]
+    end
+
+    SLIDER --> NOTIF
+    TAP --> NOTIF
+    NOTIF -->|optimistic update| NOTIF
+    NOTIF --> DEB --> WRITE --> FW
+    FW --> READ --> NOTIF
+```
+
 1. Reads initial state from the lamp during BLE connection setup
 2. Optimistically updates local state on user interaction
 3. Debounces writes to the lamp over BLE (50 ms default)
 4. Listens to BLE notifications for external state changes
 
-### BLE Communication
-
-The BLE layer is split into three tiers:
-
-1. **BleService** (`ble_service.dart`) -- Thin wrapper around `flutter_reactive_ble`. Handles scanning, connecting, MTU negotiation, and raw read/write/subscribe operations.
-
-2. **BleCodec** (`ble_codec.dart`) -- Serializes and deserializes all 12 GATT characteristic payloads. Little-endian byte encoding matching the firmware's wire format.
-
-3. **BleConnectionManager** (`ble_connection_manager.dart`) -- Manages the full connection lifecycle: connect, negotiate MTU (512), read initial state for all characteristics, subscribe to notifications (LED state, sensor data, scene list, schedule list, OTA status), and broadcast connection state changes.
-
 ### Navigation
 
 [GoRouter](https://pub.dev/packages/go_router) with nested routes:
 
-| Route | Screen |
-|-------|--------|
-| `/` | Home (paired lamp list) |
-| `/pairing` | BLE scan & pair |
-| `/control/:deviceId` | Main control |
-| `/control/:deviceId/auto` | Auto mode settings |
-| `/control/:deviceId/flame` | Flame mode settings |
-| `/control/:deviceId/scenes` | Scene list |
-| `/control/:deviceId/schedules` | Schedule list |
-| `/control/:deviceId/ota` | OTA update |
+```mermaid
+graph TD
+    HOME["/  Home<br>Paired lamp list"] --> PAIR["/pairing<br>BLE scan & pair"]
+    HOME --> CTRL["/control/:deviceId<br>Main control"]
+    CTRL --> AUTO_S["/control/:deviceId/auto<br>Auto mode settings"]
+    CTRL --> FLAME_S["/control/:deviceId/flame<br>Flame settings"]
+    CTRL --> SCENE_S["/control/:deviceId/scenes<br>Scene list"]
+    CTRL --> SCHED_S["/control/:deviceId/schedules<br>Schedule list"]
+    CTRL --> OTA_S["/control/:deviceId/ota<br>OTA update"]
+```
 
 ## Getting Started
 
