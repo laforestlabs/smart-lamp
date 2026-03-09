@@ -149,6 +149,7 @@ void lamp_control_set_flags(uint8_t flags)
     if (new_flame && !old_flame) {
         flame_mode_set_color(s_active_scene.warm, s_active_scene.neutral,
                              s_active_scene.cool);
+        flame_mode_set_scene_master(s_active_scene.master);
         flame_mode_start();
     }
     if (new_circ && !old_circ) {
@@ -176,7 +177,7 @@ void lamp_control_apply_scene(const scene_t *scene)
     flame_config_t fc = {
         scene->flame_drift_x, scene->flame_drift_y, scene->flame_restore,
         scene->flame_radius,  scene->flame_bias_y,  scene->flame_flicker_depth,
-        scene->flame_flicker_speed, scene->flame_brightness,
+        scene->flame_flicker_speed,
     };
     flame_mode_set_config(&fc);
 
@@ -192,6 +193,7 @@ void lamp_control_apply_scene(const scene_t *scene)
 
     if (s_flags & MODE_FLAG_FLAME) {
         flame_mode_set_color(scene->warm, scene->neutral, scene->cool);
+        flame_mode_set_scene_master(scene->master);
     }
 
     if (s_flags == 0 && s_lamp_on) {
@@ -220,9 +222,12 @@ void lamp_control_set_state(uint8_t warm, uint8_t neutral, uint8_t cool, uint8_t
             flame_mode_stop();
             lamp_off();
             s_lamp_on = false;
-        } else if (!flame_mode_is_active()) {
-            /* Turning back on: restart flame */
-            flame_mode_start();
+        } else {
+            flame_mode_set_scene_master(master);
+            if (!flame_mode_is_active()) {
+                /* Turning back on: restart flame */
+                flame_mode_start();
+            }
             s_lamp_on = true;
         }
     } else if (s_flags & MODE_FLAG_AUTO) {
@@ -266,7 +271,6 @@ void lamp_control_apply_sync(const sensor_sync_data_t *sync)
     scene.flame_bias_y       = sync->flame_config[4];
     scene.flame_flicker_depth  = sync->flame_config[5];
     scene.flame_flicker_speed  = sync->flame_config[6];
-    scene.flame_brightness   = sync->flame_config[7];
     scene.pir_sensitivity    = sync->pir_sensitivity;
 
     /* Set lamp_on state BEFORE apply_scene so that apply_scene's LED write
@@ -302,6 +306,7 @@ void lamp_control_update_auto_config(const auto_config_t *cfg)
     s_active_scene.auto_timeout_s     = cfg->timeout_s;
     s_active_scene.auto_lux_threshold = cfg->lux_threshold;
     lamp_nvs_save_active_scene(&s_active_scene);
+    broadcast_current_state();
 }
 
 void lamp_control_update_flame_config(const flame_config_t *cfg)
@@ -314,8 +319,8 @@ void lamp_control_update_flame_config(const flame_config_t *cfg)
     s_active_scene.flame_bias_y        = cfg->bias_y;
     s_active_scene.flame_flicker_depth = cfg->flicker_depth;
     s_active_scene.flame_flicker_speed = cfg->flicker_speed;
-    s_active_scene.flame_brightness    = cfg->brightness;
     lamp_nvs_save_active_scene(&s_active_scene);
+    broadcast_current_state();
 }
 
 void lamp_control_set_pir_sensitivity(uint8_t level)
@@ -323,6 +328,7 @@ void lamp_control_set_pir_sensitivity(uint8_t level)
     sensor_set_pir_sensitivity(level);
     s_active_scene.pir_sensitivity = level;
     lamp_nvs_save_active_scene(&s_active_scene);
+    broadcast_current_state();
 }
 
 /* ── Event loop task ── */
@@ -362,10 +368,21 @@ static void control_task(void *arg)
                 break;
 
             case SENSOR_EVT_SYNC:
-                ESP_LOGI(TAG, "Sync RX: [%d,%d,%d,%d] flags=0x%02x lamp_on=%d",
+                ESP_LOGI(TAG, "Sync RX: [%d,%d,%d,%d] flags=0x%02x lamp_on=%d"
+                         " auto=[%u,%u] pir=%d flame=[%d,%d,%d,%d,%d,%d,%d]",
                          evt.data.sync.warm, evt.data.sync.neutral,
                          evt.data.sync.cool, evt.data.sync.master,
-                         evt.data.sync.flags, evt.data.sync.lamp_on);
+                         evt.data.sync.flags, evt.data.sync.lamp_on,
+                         evt.data.sync.auto_timeout_s,
+                         evt.data.sync.auto_lux_threshold,
+                         evt.data.sync.pir_sensitivity,
+                         evt.data.sync.flame_config[0],
+                         evt.data.sync.flame_config[1],
+                         evt.data.sync.flame_config[2],
+                         evt.data.sync.flame_config[3],
+                         evt.data.sync.flame_config[4],
+                         evt.data.sync.flame_config[5],
+                         evt.data.sync.flame_config[6]);
                 lamp_control_apply_sync(&evt.data.sync);
                 break;
 
@@ -405,7 +422,7 @@ esp_err_t lamp_control_init(QueueHandle_t sensor_queue)
         s_active_scene.flame_drift_x, s_active_scene.flame_drift_y,
         s_active_scene.flame_restore,  s_active_scene.flame_radius,
         s_active_scene.flame_bias_y,   s_active_scene.flame_flicker_depth,
-        s_active_scene.flame_flicker_speed, s_active_scene.flame_brightness,
+        s_active_scene.flame_flicker_speed,
     };
 
     /* Initialise sub-modules */
@@ -424,6 +441,7 @@ esp_err_t lamp_control_init(QueueHandle_t sensor_queue)
     if (s_flags & MODE_FLAG_FLAME) {
         flame_mode_set_color(s_active_scene.warm, s_active_scene.neutral,
                              s_active_scene.cool);
+        flame_mode_set_scene_master(s_active_scene.master);
         flame_mode_start();
     }
     if (s_flags & MODE_FLAG_CIRCADIAN) {

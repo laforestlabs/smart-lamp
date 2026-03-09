@@ -155,7 +155,8 @@ class CircadianTimerNotifier extends StateNotifier<bool> {
       }
     });
     if (_ref.read(modeFlagsProvider).circadianEnabled) {
-      _start();
+      // Defer to avoid modifying lampStateProvider during our own initialization
+      Future.microtask(() { if (mounted) _start(); });
     }
   }
 

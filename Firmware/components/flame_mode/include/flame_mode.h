@@ -46,6 +46,13 @@ bool flame_mode_is_active(void);
  */
 void flame_mode_set_master_override(uint8_t master);
 
+/**
+ * Set the scene master brightness (0–255).
+ * This is the global brightness from scene.master, replacing the old
+ * per-flame-config brightness.  Call when global brightness changes.
+ */
+void flame_mode_set_scene_master(uint8_t master);
+
 #ifdef __cplusplus
 }
 #endif

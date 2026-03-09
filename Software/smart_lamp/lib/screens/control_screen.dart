@@ -250,7 +250,6 @@ class ControlScreen extends ConsumerWidget {
                           flameBiasY: flameConfig.biasY,
                           flameFlickerDepth: flameConfig.flickerDepth,
                           flameFlickerSpeed: flameConfig.flickerSpeed,
-                          flameBrightness: flameConfig.brightness,
                           pirSensitivity: pirLevel,
                         ),
                       );

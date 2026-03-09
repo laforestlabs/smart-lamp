@@ -41,9 +41,9 @@ static flame_config_t    s_cfg = {
     .bias_y        = FLAME_BIAS_Y_DEFAULT,
     .flicker_depth = FLAME_FLICKER_DEPTH_DEFAULT,
     .flicker_speed = FLAME_FLICKER_SPEED_DEFAULT,
-    .brightness    = FLAME_BRIGHTNESS_DEFAULT,
 };
 static volatile uint8_t  s_master_override = 255;
+static volatile uint8_t  s_scene_master = 255;   /* global brightness from scene.master */
 
 /* Base colour values (0–255) — set from active scene */
 static volatile uint8_t s_color_w = 255;
@@ -98,7 +98,7 @@ static void flame_task(void *arg)
         float fl_speed    = SCALE_FLICKER_S(cfg.flicker_speed);
         /* Compute pixel values at full range; brightness applied via lamp_set_master
          * so that gamma correction sees full-range values (avoids dead zone at low brightness) */
-        uint8_t master_out = (uint16_t)cfg.brightness * s_master_override / 255;
+        uint8_t master_out = (uint16_t)s_scene_master * s_master_override / 255;
 
         /* ── Random walk ── */
         fx += randf_gaussian(0.0f, drift_x) - k_restore * (fx - 2.0f);
@@ -192,8 +192,8 @@ esp_err_t flame_mode_start(void)
     /* s_cfg already set via flame_mode_set_config() before start */
     s_master_override = 255;
 
-    ESP_LOGI(TAG, "Starting flame: color=[%d,%d,%d] override=%d br=%d",
-             s_color_w, s_color_n, s_color_c, s_master_override, s_cfg.brightness);
+    ESP_LOGI(TAG, "Starting flame: color=[%d,%d,%d] override=%d scene_master=%d",
+             s_color_w, s_color_n, s_color_c, s_master_override, s_scene_master);
 
     s_running = true;
     BaseType_t ret = xTaskCreatePinnedToCore(flame_task, "flame", FLAME_TASK_STACK,
@@ -221,9 +221,9 @@ void flame_mode_stop(void)
 
 esp_err_t flame_mode_set_config(const flame_config_t *cfg)
 {
-    ESP_LOGI(TAG, "set_config: dx=%d dy=%d rst=%d r=%d by=%d fd=%d fs=%d br=%d",
+    ESP_LOGI(TAG, "set_config: dx=%d dy=%d rst=%d r=%d by=%d fd=%d fs=%d",
              cfg->drift_x, cfg->drift_y, cfg->restore, cfg->radius,
-             cfg->bias_y, cfg->flicker_depth, cfg->flicker_speed, cfg->brightness);
+             cfg->bias_y, cfg->flicker_depth, cfg->flicker_speed);
     s_cfg = *cfg;
     return ESP_OK;
 }
@@ -250,4 +250,10 @@ void flame_mode_set_master_override(uint8_t master)
 {
     ESP_LOGI(TAG, "master_override: %d", master);
     s_master_override = master;
+}
+
+void flame_mode_set_scene_master(uint8_t master)
+{
+    ESP_LOGI(TAG, "scene_master: %d", master);
+    s_scene_master = master;
 }

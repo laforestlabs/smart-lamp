@@ -80,7 +80,7 @@ class _FlameGridPreviewState extends State<FlameGridPreview>
     final biasY = cfg.biasY / 255.0 * 6.0;
     final flDepth = cfg.flickerDepth / 255.0;
     final flSpeed = 1.0 + cfg.flickerSpeed / 255.0 * 9.0;
-    final master = cfg.brightness / 255.0;
+    const master = 1.0;
 
     // Random walk
     _fx += _gaussian(0, driftX) - kRestore * (_fx - 2.0);

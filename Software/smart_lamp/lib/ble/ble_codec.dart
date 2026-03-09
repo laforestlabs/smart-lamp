@@ -82,7 +82,6 @@ class BleCodec {
       scene.flameBiasY,
       scene.flameFlickerDepth,
       scene.flameFlickerSpeed,
-      scene.flameBrightness,
       scene.pirSensitivity.clamp(0, 31),
     ];
   }
@@ -124,7 +123,6 @@ class BleCodec {
       final biasY      = (offset < bytes.length) ? bytes[offset++] : 128;
       final flickDepth = (offset < bytes.length) ? bytes[offset++] : 13;
       final flickSpeed = (offset < bytes.length) ? bytes[offset++] : 13;
-      final flameBri   = (offset < bytes.length) ? bytes[offset++] : 255;
       final pirSens    = (offset < bytes.length) ? bytes[offset++] : 24;
       scenes.add(Scene(
         index: index,
@@ -145,7 +143,6 @@ class BleCodec {
         flameBiasY: biasY,
         flameFlickerDepth: flickDepth,
         flameFlickerSpeed: flickSpeed,
-        flameBrightness: flameBri,
         pirSensitivity: pirSens,
       ));
     }
@@ -209,7 +206,7 @@ class BleCodec {
   // ── Flame Config ──
 
   static FlameConfig decodeFlameConfig(List<int> bytes) {
-    if (bytes.length < 8) return const FlameConfig();
+    if (bytes.length < 7) return const FlameConfig();
     return FlameConfig(
       driftX: bytes[0],
       driftY: bytes[1],
@@ -218,7 +215,6 @@ class BleCodec {
       biasY: bytes[4],
       flickerDepth: bytes[5],
       flickerSpeed: bytes[6],
-      brightness: bytes[7],
     );
   }
 
@@ -231,7 +227,6 @@ class BleCodec {
       cfg.biasY,
       cfg.flickerDepth,
       cfg.flickerSpeed,
-      cfg.brightness,
     ];
   }
 

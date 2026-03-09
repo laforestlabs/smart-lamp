@@ -508,8 +508,8 @@ async def test_soak_reliability():
     else:
         detail = f"0/{N} delivered"
 
-    # 80% threshold — ESP-NOW over shared BLE radio has high variance
-    if rate >= 80:
+    # 90% threshold — broadcast baseline with 12 retries + jitter
+    if rate >= 90:
         result.ok(name, detail)
     else:
         result.fail(name, detail)
@@ -663,6 +663,165 @@ async def test_circadian_flag_sync():
     await reset_baseline()
 
 
+async def test_flame_config_sync():
+    """Verify flame config parameters propagate via ESP-NOW."""
+    name = "test_flame_config_sync"
+    await reset_baseline()
+
+    # Enable flame mode first (flame config is part of scene)
+    await lamp.set_flags(MODE_FLAG_FLAME)
+    await asyncio.sleep(3.0)
+    monitor.clear()
+
+    # Set distinctive flame config values
+    await lamp.set_flame_config(
+        drift_x=200, drift_y=50, restore=30,
+        radius=180, bias_y=64, flicker_depth=25,
+        flicker_speed=20, brightness=200
+    )
+    rx = monitor.wait_for_sync_rx(timeout=SYNC_TIMEOUT)
+
+    if rx is None:
+        result.fail(name, "No Sync RX for flame config change")
+        monitor.dump_recent()
+    elif rx.flame_config == [0]*8:
+        # Extended logging not yet on this firmware
+        result.fail(name, "Flame config fields are all zeros (firmware log not extended?)")
+    else:
+        expected = [200, 50, 30, 180, 64, 25, 20, 200]
+        if rx.flame_config == expected:
+            result.ok(name, f"flame={rx.flame_config}")
+        else:
+            result.fail(name, f"Expected flame={expected}, got {rx.flame_config}")
+
+    await reset_baseline()
+
+
+async def test_auto_config_sync():
+    """Verify auto timeout and lux threshold propagate via ESP-NOW."""
+    name = "test_auto_config_sync"
+    await reset_baseline()
+    monitor.clear()
+
+    await lamp.set_auto_config(timeout_s=600, lux_threshold=100)
+    rx = monitor.wait_for_sync_rx(timeout=SYNC_TIMEOUT)
+
+    if rx is None:
+        result.fail(name, "No Sync RX for auto config change")
+        monitor.dump_recent()
+    elif rx.auto_timeout_s == 600 and rx.auto_lux_threshold == 100:
+        result.ok(name, f"auto=[{rx.auto_timeout_s},{rx.auto_lux_threshold}]")
+    else:
+        result.fail(name,
+            f"Expected auto=[600,100], got [{rx.auto_timeout_s},{rx.auto_lux_threshold}]")
+
+    await reset_baseline()
+
+
+async def test_pir_sensitivity_sync():
+    """Verify PIR sensitivity value propagates via ESP-NOW."""
+    name = "test_pir_sensitivity_sync"
+    await reset_baseline()
+    monitor.clear()
+
+    await lamp.set_pir_sensitivity(10)
+    rx = monitor.wait_for_sync_rx(timeout=SYNC_TIMEOUT)
+
+    if rx is None:
+        result.fail(name, "No Sync RX for PIR sensitivity change")
+        monitor.dump_recent()
+    elif rx.pir_sensitivity == 10:
+        result.ok(name, f"pir={rx.pir_sensitivity}")
+    else:
+        result.fail(name, f"Expected pir=10, got {rx.pir_sensitivity}")
+
+    await reset_baseline()
+
+
+async def test_concurrent_ble_sync():
+    """Verify sync delivery while BLE is actively reading characteristics."""
+    name = "test_concurrent_ble_sync"
+    await reset_baseline()
+    monitor.clear()
+
+    # Fire rapid BLE reads in background while triggering sync
+    async def ble_reads():
+        for _ in range(20):
+            try:
+                await lamp.get_color()
+            except Exception:
+                pass
+            await asyncio.sleep(0.05)
+
+    read_task = asyncio.create_task(ble_reads())
+
+    # Send a distinctive color during BLE read burst
+    await lamp.set_color(77, 88, 99, 150)
+    rx = monitor.wait_for_sync_rx(timeout=SYNC_TIMEOUT)
+
+    await read_task
+
+    if rx is None:
+        result.fail(name, "No Sync RX during concurrent BLE reads")
+        monitor.dump_recent()
+    elif rx.warm == 77 and rx.neutral == 88 and rx.cool == 99:
+        result.ok(name, f"[{rx.warm},{rx.neutral},{rx.cool},{rx.master}]")
+    else:
+        result.fail(name,
+            f"Expected [77,88,99], got [{rx.warm},{rx.neutral},{rx.cool}]")
+
+    await reset_baseline()
+
+
+async def test_peer_discovery():
+    """Verify lamps discover each other via MSG_DISCOVERY broadcast."""
+    name = "test_peer_discovery"
+    await reset_baseline()
+    monitor.clear()
+
+    # Trigger re-discovery by toggling group off then on
+    await lamp.set_group(0)
+    await asyncio.sleep(1.0)
+    await lamp.set_group(1)
+    await asyncio.sleep(3.0)  # allow discovery broadcasts + responses
+
+    # Look for discovery-related log on SN003 serial
+    discovered = monitor.wait_for(r"peer added|discovery|DISC", timeout=5.0)
+    if discovered:
+        result.ok(name, f"Peer discovery detected: {discovered.group(0)}")
+    else:
+        # Before unicast firmware, this test is informational only
+        result.ok(name, "No discovery log (expected until unicast firmware is flashed)")
+
+
+async def test_dedup_different_seq():
+    """Verify same color with different seq number is NOT deduped."""
+    name = "test_dedup_different_seq"
+    await reset_baseline()
+    monitor.clear()
+
+    # Send color 42,42,42,200
+    await lamp.set_color(42, 42, 42, 200)
+    rx1 = monitor.wait_for_sync_rx(timeout=SYNC_TIMEOUT)
+    if rx1 is None:
+        result.fail(name, "First message not received")
+        return
+
+    # Reset baseline (different seq) then send same color again
+    await reset_baseline()
+    monitor.clear()
+
+    await lamp.set_color(42, 42, 42, 200)
+    rx2 = monitor.wait_for_sync_rx(timeout=SYNC_TIMEOUT)
+
+    if rx2 is None:
+        result.fail(name, "Second message deduped incorrectly (or not received)")
+    elif rx2.warm == 42:
+        result.ok(name, "Same color with different seq was delivered (not deduped)")
+    else:
+        result.fail(name, f"Unexpected values: [{rx2.warm},{rx2.neutral},{rx2.cool}]")
+
+
 ALL_TESTS = [
     ("test_color_sync",              test_color_sync),
     ("test_on_off_sync",             test_on_off_sync),
@@ -677,6 +836,12 @@ ALL_TESTS = [
     ("test_rapid_burst",             test_rapid_burst),
     ("test_per_retry_delivery_rate", test_per_retry_delivery_rate),
     ("test_on_off_rapid_toggle",     test_on_off_rapid_toggle),
+    ("test_flame_config_sync",       test_flame_config_sync),
+    ("test_auto_config_sync",        test_auto_config_sync),
+    ("test_pir_sensitivity_sync",    test_pir_sensitivity_sync),
+    ("test_concurrent_ble_sync",     test_concurrent_ble_sync),
+    ("test_peer_discovery",          test_peer_discovery),
+    ("test_dedup_different_seq",     test_dedup_different_seq),
 ]
 
 

@@ -25,17 +25,6 @@ class FlameScreen extends ConsumerWidget {
           ),
           const SizedBox(height: 24),
 
-          // Intensity
-          _buildSlider(
-            context,
-            label: 'Intensity',
-            value: config.brightness,
-            icon: Icons.brightness_high,
-            onChanged: (v) =>
-                ref.read(flameConfigProvider.notifier).setBrightness(v),
-          ),
-          const SizedBox(height: 8),
-
           // Drift (Calm ↔ Wild)
           _buildSlider(
             context,

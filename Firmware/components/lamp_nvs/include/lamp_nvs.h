@@ -29,7 +29,6 @@ extern "C" {
 #define FLAME_BIAS_Y_DEFAULT         128
 #define FLAME_FLICKER_DEPTH_DEFAULT  13
 #define FLAME_FLICKER_SPEED_DEFAULT  13
-#define FLAME_BRIGHTNESS_DEFAULT     255
 #define PIR_SENSITIVITY_DEFAULT      24
 
 typedef struct {
@@ -50,7 +49,6 @@ typedef struct {
     uint8_t  flame_bias_y;
     uint8_t  flame_flicker_depth;
     uint8_t  flame_flicker_speed;
-    uint8_t  flame_brightness;
     uint8_t  pir_sensitivity;    /* 0–31 */
 } scene_t;
 
@@ -75,7 +73,6 @@ typedef struct {
     uint8_t bias_y;
     uint8_t flicker_depth;
     uint8_t flicker_speed;
-    uint8_t brightness;
 } flame_config_t;
 
 /* Lamp mode flags (bitmask) */

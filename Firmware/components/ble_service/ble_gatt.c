@@ -178,8 +178,7 @@ static int scene_write_access(uint16_t conn_handle, uint16_t attr_handle,
     scene.flame_bias_y        = SCENE_OPT(11) ? buf[base + 11] : FLAME_BIAS_Y_DEFAULT;
     scene.flame_flicker_depth = SCENE_OPT(12) ? buf[base + 12] : FLAME_FLICKER_DEPTH_DEFAULT;
     scene.flame_flicker_speed = SCENE_OPT(13) ? buf[base + 13] : FLAME_FLICKER_SPEED_DEFAULT;
-    scene.flame_brightness    = SCENE_OPT(14) ? buf[base + 14] : FLAME_BRIGHTNESS_DEFAULT;
-    scene.pir_sensitivity     = SCENE_OPT(15) ? buf[base + 15] : PIR_SENSITIVITY_DEFAULT;
+    scene.pir_sensitivity     = SCENE_OPT(14) ? buf[base + 14] : PIR_SENSITIVITY_DEFAULT;
 #undef SCENE_OPT
 
     lamp_nvs_save_scene(index, &scene);
@@ -220,12 +219,12 @@ static int scene_list_access(uint16_t conn_handle, uint16_t attr_handle,
         memcpy(&auto_buf[0], &scene.auto_timeout_s, 2);
         memcpy(&auto_buf[2], &scene.auto_lux_threshold, 2);
         os_mbuf_append(ctxt->om, auto_buf, 4);
-        uint8_t flame_buf[8] = {
+        uint8_t flame_buf[7] = {
             scene.flame_drift_x, scene.flame_drift_y, scene.flame_restore,
             scene.flame_radius,  scene.flame_bias_y,  scene.flame_flicker_depth,
-            scene.flame_flicker_speed, scene.flame_brightness,
+            scene.flame_flicker_speed,
         };
-        os_mbuf_append(ctxt->om, flame_buf, 8);
+        os_mbuf_append(ctxt->om, flame_buf, 7);
         os_mbuf_append(ctxt->om, &scene.pir_sensitivity, 1);
     }
     return 0;

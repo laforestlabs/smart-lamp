@@ -6,7 +6,6 @@ class FlameConfig {
   final int biasY;
   final int flickerDepth;
   final int flickerSpeed;
-  final int brightness;
 
   const FlameConfig({
     this.driftX = 128,
@@ -16,7 +15,6 @@ class FlameConfig {
     this.biasY = 128,
     this.flickerDepth = 13,
     this.flickerSpeed = 13,
-    this.brightness = 255,
   });
 
   FlameConfig copyWith({
@@ -27,7 +25,6 @@ class FlameConfig {
     int? biasY,
     int? flickerDepth,
     int? flickerSpeed,
-    int? brightness,
   }) {
     return FlameConfig(
       driftX: driftX ?? this.driftX,
@@ -37,7 +34,6 @@ class FlameConfig {
       biasY: biasY ?? this.biasY,
       flickerDepth: flickerDepth ?? this.flickerDepth,
       flickerSpeed: flickerSpeed ?? this.flickerSpeed,
-      brightness: brightness ?? this.brightness,
     );
   }
 
@@ -51,10 +47,9 @@ class FlameConfig {
           radius == other.radius &&
           biasY == other.biasY &&
           flickerDepth == other.flickerDepth &&
-          flickerSpeed == other.flickerSpeed &&
-          brightness == other.brightness;
+          flickerSpeed == other.flickerSpeed;
 
   @override
   int get hashCode => Object.hash(
-      driftX, driftY, restore, radius, biasY, flickerDepth, flickerSpeed, brightness);
+      driftX, driftY, restore, radius, biasY, flickerDepth, flickerSpeed);
 }

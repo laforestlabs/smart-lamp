@@ -72,7 +72,6 @@ static void scene_set_new_field_defaults(scene_t *scene)
     scene->flame_bias_y        = FLAME_BIAS_Y_DEFAULT;
     scene->flame_flicker_depth = FLAME_FLICKER_DEPTH_DEFAULT;
     scene->flame_flicker_speed = FLAME_FLICKER_SPEED_DEFAULT;
-    scene->flame_brightness    = FLAME_BRIGHTNESS_DEFAULT;
     scene->pir_sensitivity     = PIR_SENSITIVITY_DEFAULT;
 }
 

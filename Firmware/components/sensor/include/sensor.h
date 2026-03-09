@@ -40,8 +40,8 @@ typedef struct {
     uint8_t  fade_out_s;
     uint16_t auto_timeout_s;
     uint16_t auto_lux_threshold;
-    uint8_t  flame_config[8]; /* drift_x, drift_y, restore, radius, bias_y,
-                                  flicker_depth, flicker_speed, brightness */
+    uint8_t  flame_config[7]; /* drift_x, drift_y, restore, radius, bias_y,
+                                  flicker_depth, flicker_speed */
     uint8_t  pir_sensitivity;
     uint8_t  lamp_on;         /* 0 = off, 1 = on (operational state) */
 } sensor_sync_data_t;

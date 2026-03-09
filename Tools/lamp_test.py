@@ -161,8 +161,7 @@ class LampBLE:
                           auto_timeout_s: int = 300, auto_lux: int = 185,
                           flame_drift_x=128, flame_drift_y=102, flame_restore=20,
                           flame_radius=128, flame_bias_y=128, flame_flicker_depth=13,
-                          flame_flicker_speed=13, flame_brightness=255,
-                          pir_sensitivity=16):
+                          flame_flicker_speed=13, pir_sensitivity=16):
         """Write a full scene to char AA04."""
         name_bytes = name.encode("utf-8")[:16]
         data = bytearray()
@@ -175,8 +174,7 @@ class LampBLE:
         data.append(fade_out_s)
         data.extend(struct.pack("<HH", auto_timeout_s, auto_lux))
         data.extend([flame_drift_x, flame_drift_y, flame_restore, flame_radius,
-                     flame_bias_y, flame_flicker_depth, flame_flicker_speed,
-                     flame_brightness])
+                     flame_bias_y, flame_flicker_depth, flame_flicker_speed])
         data.append(pir_sensitivity)
         await self._client.write_gatt_char(CHAR_SCENE_WRITE, bytes(data))
         print(f"[BLE] write_scene(idx={index}, name='{name}', "
@@ -213,14 +211,20 @@ class SyncRxEvent:
     master: int = 0
     flags: int = 0
     lamp_on: int = 0
+    auto_timeout_s: int = 0
+    auto_lux_threshold: int = 0
+    pir_sensitivity: int = 0
+    flame_config: list = field(default_factory=lambda: [0]*8)
 
 
 class SerialMonitor:
     """Threaded serial port monitor that captures and parses firmware logs."""
 
-    # Regex for lamp_ctrl "Sync RX" lines
+    # Regex for lamp_ctrl "Sync RX" lines (extended format with auto/pir/flame)
     SYNC_RX_RE = re.compile(
         r"Sync RX: \[(\d+),(\d+),(\d+),(\d+)\] flags=0x([0-9a-fA-F]+) lamp_on=(\d+)"
+        r"(?: auto=\[(\d+),(\d+)\] pir=(\d+)"
+        r" flame=\[(\d+),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+)\])?"
     )
     # Regex for esp_now_sync "RX from" lines
     ESPNOW_RX_RE = re.compile(
@@ -324,7 +328,7 @@ class SerialMonitor:
         """Wait for a 'Sync RX' log line and parse it."""
         m = self.wait_for(self.SYNC_RX_RE.pattern, timeout)
         if m:
-            return SyncRxEvent(
+            evt = SyncRxEvent(
                 warm=int(m.group(1)),
                 neutral=int(m.group(2)),
                 cool=int(m.group(3)),
@@ -332,6 +336,13 @@ class SerialMonitor:
                 flags=int(m.group(5), 16),
                 lamp_on=int(m.group(6)),
             )
+            # Extended fields (present in firmware with extended logging)
+            if m.group(7) is not None:
+                evt.auto_timeout_s = int(m.group(7))
+                evt.auto_lux_threshold = int(m.group(8))
+                evt.pir_sensitivity = int(m.group(9))
+                evt.flame_config = [int(m.group(i)) for i in range(10, 18)]
+            return evt
         return None
 
     def wait_for_espnow_rx(self, timeout: float = 5.0):

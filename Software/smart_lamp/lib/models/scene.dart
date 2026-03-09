@@ -17,7 +17,6 @@ class Scene {
   final int flameBiasY;
   final int flameFlickerDepth;
   final int flameFlickerSpeed;
-  final int flameBrightness;
   final int pirSensitivity;
 
   const Scene({
@@ -39,7 +38,6 @@ class Scene {
     this.flameBiasY = 128,
     this.flameFlickerDepth = 13,
     this.flameFlickerSpeed = 13,
-    this.flameBrightness = 255,
     this.pirSensitivity = 24,
   });
 
@@ -62,7 +60,6 @@ class Scene {
     int? flameBiasY,
     int? flameFlickerDepth,
     int? flameFlickerSpeed,
-    int? flameBrightness,
     int? pirSensitivity,
   }) {
     return Scene(
@@ -84,7 +81,6 @@ class Scene {
       flameBiasY: flameBiasY ?? this.flameBiasY,
       flameFlickerDepth: flameFlickerDepth ?? this.flameFlickerDepth,
       flameFlickerSpeed: flameFlickerSpeed ?? this.flameFlickerSpeed,
-      flameBrightness: flameBrightness ?? this.flameBrightness,
       pirSensitivity: pirSensitivity ?? this.pirSensitivity,
     );
   }

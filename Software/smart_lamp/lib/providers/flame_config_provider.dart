@@ -53,11 +53,6 @@ class FlameConfigNotifier extends StateNotifier<FlameConfig> {
     _debouncedWrite();
   }
 
-  void setBrightness(int value) {
-    state = state.copyWith(brightness: value);
-    _debouncedWrite();
-  }
-
   void _debouncedWrite() {
     _debouncer.call(() => _writeNow());
   }
