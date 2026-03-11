@@ -103,6 +103,25 @@ void auto_mode_force_on(void);
  */
 void auto_mode_force_off(void);
 
+/**
+ * Temporarily suppress auto mode for @p minutes.
+ * Disables auto mode and starts a one-shot timer.  When the timer fires,
+ * a SENSOR_EVT_AUTO_UNSUPPRESS is posted to @p event_queue so the control
+ * task can re-enable auto mode.  Calling again restarts the timer.
+ */
+void auto_mode_suppress(uint16_t minutes, QueueHandle_t event_queue);
+
+/**
+ * Cancel any active suppression timer (e.g. when sync or BLE explicitly
+ * re-enables auto mode).
+ */
+void auto_mode_cancel_suppress(void);
+
+/**
+ * Returns true if auto mode is currently suppressed by a touch-off.
+ */
+bool auto_mode_is_suppressed(void);
+
 #ifdef __cplusplus
 }
 #endif

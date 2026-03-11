@@ -18,8 +18,9 @@ extern "C" {
 #define FADE_OUT_S_DEFAULT  10
 
 /* Default auto-mode settings */
-#define AUTO_TIMEOUT_S_DEFAULT  300
-#define AUTO_LUX_DEFAULT        185
+#define AUTO_TIMEOUT_S_DEFAULT      300
+#define AUTO_LUX_DEFAULT            185
+#define AUTO_SUPPRESS_MIN_DEFAULT   60
 
 /* Default flame settings (match Flutter FlameConfig defaults) */
 #define FLAME_DRIFT_X_DEFAULT        128
@@ -42,6 +43,7 @@ typedef struct {
     uint8_t  fade_out_s;         /* seconds to fade from full brightness to off */
     uint16_t auto_timeout_s;     /* inactivity timeout before fade-out */
     uint16_t auto_lux_threshold; /* don't activate above this lux level */
+    uint16_t auto_suppress_min; /* minutes to suppress auto after touch-off */
     uint8_t  flame_drift_x;
     uint8_t  flame_drift_y;
     uint8_t  flame_restore;
@@ -55,6 +57,7 @@ typedef struct {
 typedef struct {
     uint16_t timeout_s;
     uint16_t lux_threshold;
+    uint16_t suppress_min;      /* minutes to suppress auto after touch-off */
 } auto_config_t;
 
 typedef struct {

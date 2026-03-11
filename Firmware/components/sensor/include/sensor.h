@@ -27,6 +27,7 @@ typedef enum {
     SENSOR_EVT_TOUCH_LONG,
     SENSOR_EVT_LUX_UPDATE,
     SENSOR_EVT_SYNC,            /* ESP-NOW state received from peer */
+    SENSOR_EVT_AUTO_UNSUPPRESS, /* suppress timer expired — re-enable auto mode */
 } sensor_event_type_t;
 
 /** Full scene + operational state carried in a SENSOR_EVT_SYNC event. */
@@ -40,6 +41,7 @@ typedef struct {
     uint8_t  fade_out_s;
     uint16_t auto_timeout_s;
     uint16_t auto_lux_threshold;
+    uint16_t auto_suppress_min;
     uint8_t  flame_config[7]; /* drift_x, drift_y, restore, radius, bias_y,
                                   flicker_depth, flicker_speed */
     uint8_t  pir_sensitivity;

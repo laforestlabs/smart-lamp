@@ -18,6 +18,7 @@ class Scene {
   final int flameFlickerDepth;
   final int flameFlickerSpeed;
   final int pirSensitivity;
+  final int autoSuppressMinutes;
 
   const Scene({
     required this.index,
@@ -39,6 +40,7 @@ class Scene {
     this.flameFlickerDepth = 13,
     this.flameFlickerSpeed = 13,
     this.pirSensitivity = 24,
+    this.autoSuppressMinutes = 60,
   });
 
   Scene copyWith({
@@ -61,6 +63,7 @@ class Scene {
     int? flameFlickerDepth,
     int? flameFlickerSpeed,
     int? pirSensitivity,
+    int? autoSuppressMinutes,
   }) {
     return Scene(
       index: index ?? this.index,
@@ -82,6 +85,7 @@ class Scene {
       flameFlickerDepth: flameFlickerDepth ?? this.flameFlickerDepth,
       flameFlickerSpeed: flameFlickerSpeed ?? this.flameFlickerSpeed,
       pirSensitivity: pirSensitivity ?? this.pirSensitivity,
+      autoSuppressMinutes: autoSuppressMinutes ?? this.autoSuppressMinutes,
     );
   }
 

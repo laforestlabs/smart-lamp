@@ -29,6 +29,11 @@ class AutoConfigNotifier extends StateNotifier<AutoConfig> {
     _debouncedWrite();
   }
 
+  void setSuppressMinutes(int value) {
+    state = state.copyWith(suppressMinutes: value);
+    _debouncedWrite();
+  }
+
   void _debouncedWrite() {
     _debouncer.call(() => _writeNow());
   }

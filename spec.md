@@ -62,6 +62,10 @@ it drives its OUT pin high when a touch is detected and low otherwise.
 
 **Touch behaviour in firmware:**
 - Short tap (< 1 s): toggle lamp on/off
+  - In auto mode: turning off **suppresses** auto mode for a configurable duration
+    (`auto_suppress_min`, default 60 minutes, stored per-scene). During suppression
+    motion is ignored. When the timer expires, auto mode re-enables automatically.
+    Any touch press during suppression restarts the suppress timer.
 - Long press (≥ 3 s): enter BLE pairing/advertising mode (replaces tactile button)
 - The OUT pin is a simple GPIO input with interrupt on edge; no I2C/SPI required.
 
@@ -241,10 +245,14 @@ disabling auto or flame mode. The on/off button is always available in all modes
 - **Manual:** applies scene directly.
 - **Flame only:** master=0 stops the flame task and calls `lamp_off()`; master>0 restarts
   it.
-- **Auto only:** master=0 calls `lamp_off()` immediately and tracks `s_lamp_on=false`
-  (auto mode remains armed — motion will re-activate it); master>0 applies the scene
-  immediately if the lamp is currently off. `s_lamp_on` is also updated when auto mode
-  turns the lamp off autonomously so the button state stays in sync.
+- **Auto only:** master=0 calls `lamp_off()` immediately and tracks `s_lamp_on=false`.
+  When turned off via the **touch button**, auto mode is temporarily **suppressed** for
+  `auto_suppress_min` minutes (default 60). During suppression, motion is ignored. The
+  suppress timer restarts on any subsequent touch. When the timer expires, auto mode
+  re-enables automatically (if the scene's auto flag is still set). App on/off via BLE
+  does not trigger suppression — auto mode remains armed so motion will re-activate it.
+  `s_lamp_on` is also updated when auto mode turns the lamp off autonomously so the
+  button state stays in sync.
 - **Both:** flame handles on/off; auto mode controls when the flame runs.
 
 Auto mode turn-off is a **smooth fade** rather than an instant off or a dim-then-off
@@ -406,6 +414,7 @@ toggles are active.
   - **Motion sensitivity** — PIR detection range, 0 (closest) to 31 (farthest), default 24
   - **Lux threshold** — don't activate if room is brighter than this (default: 50 lux)
   - **Timeout** — seconds of no motion before fade-out begins (default: 300 s)
+  - **Touch suppress** — minutes auto mode stays off after touch-off (default: 60 min, range 5–480)
 - **Fade rates are per-scene**, set in the Save Scene dialog:
   - **Fade In** — seconds to fade from off to full brightness on motion activation (default: 3 s, 0 = instant)
   - **Fade Out** — seconds to fade from full brightness to off after inactivity timeout (default: 10 s, 0 = instant)
@@ -571,6 +580,7 @@ the corresponding transition is instant (no timer).
 |---|---|---|
 | `lux_threshold` | 50 lux | Suppress activation above this ambient brightness |
 | `timeout_s` | 300 s | No-motion period before starting FADING_OUT |
+| `suppress_min` | 60 min | Minutes to suppress auto mode after touch-off |
 
 **Per-scene parameters** (stored in scene, set in Save Scene dialog):
 

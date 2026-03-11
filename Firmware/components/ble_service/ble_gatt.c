@@ -90,7 +90,7 @@ static int mode_access(uint16_t conn_handle, uint16_t attr_handle,
     return BLE_ATT_ERR_UNLIKELY;
 }
 
-/* ── Auto Config (0003): R/W — [timeout_s:u16LE, lux_threshold:u16LE] ── */
+/* ── Auto Config (0003): R/W — [timeout_s:u16LE, lux_threshold:u16LE, suppress_min:u16LE] ── */
 
 static int auto_config_access(uint16_t conn_handle, uint16_t attr_handle,
                               struct ble_gatt_access_ctxt *ctxt, void *arg)
@@ -98,9 +98,10 @@ static int auto_config_access(uint16_t conn_handle, uint16_t attr_handle,
     if (ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR) {
         auto_config_t cfg;
         auto_mode_get_config(&cfg);
-        uint8_t buf[4];
+        uint8_t buf[6];
         memcpy(&buf[0], &cfg.timeout_s, 2);
         memcpy(&buf[2], &cfg.lux_threshold, 2);
+        memcpy(&buf[4], &cfg.suppress_min, 2);
         os_mbuf_append(ctxt->om, buf, sizeof(buf));
         return 0;
     }
@@ -109,12 +110,17 @@ static int auto_config_access(uint16_t conn_handle, uint16_t attr_handle,
         uint16_t len = OS_MBUF_PKTLEN(ctxt->om);
         if (len < 4) return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
 
-        uint8_t buf[4];
-        os_mbuf_copydata(ctxt->om, 0, 4, buf);
+        uint8_t buf[6] = {0};
+        os_mbuf_copydata(ctxt->om, 0, (len < 6) ? len : 6, buf);
 
         auto_config_t cfg;
         memcpy(&cfg.timeout_s, &buf[0], 2);
         memcpy(&cfg.lux_threshold, &buf[2], 2);
+        if (len >= 6) {
+            memcpy(&cfg.suppress_min, &buf[4], 2);
+        } else {
+            cfg.suppress_min = AUTO_SUPPRESS_MIN_DEFAULT;
+        }
 
         /* Update live module and persist to active scene */
         lamp_control_update_auto_config(&cfg);
@@ -179,6 +185,13 @@ static int scene_write_access(uint16_t conn_handle, uint16_t attr_handle,
     scene.flame_flicker_depth = SCENE_OPT(12) ? buf[base + 12] : FLAME_FLICKER_DEPTH_DEFAULT;
     scene.flame_flicker_speed = SCENE_OPT(13) ? buf[base + 13] : FLAME_FLICKER_SPEED_DEFAULT;
     scene.pir_sensitivity     = SCENE_OPT(14) ? buf[base + 14] : PIR_SENSITIVITY_DEFAULT;
+
+    /* auto suppress */
+    if (SCENE_OPT(16)) {
+        memcpy(&scene.auto_suppress_min, &buf[base + 15], 2);
+    } else {
+        scene.auto_suppress_min = AUTO_SUPPRESS_MIN_DEFAULT;
+    }
 #undef SCENE_OPT
 
     lamp_nvs_save_scene(index, &scene);
@@ -226,6 +239,9 @@ static int scene_list_access(uint16_t conn_handle, uint16_t attr_handle,
         };
         os_mbuf_append(ctxt->om, flame_buf, 7);
         os_mbuf_append(ctxt->om, &scene.pir_sensitivity, 1);
+        uint8_t suppress_buf[2];
+        memcpy(suppress_buf, &scene.auto_suppress_min, 2);
+        os_mbuf_append(ctxt->om, suppress_buf, 2);
     }
     return 0;
 }

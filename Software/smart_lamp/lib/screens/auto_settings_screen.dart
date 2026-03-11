@@ -6,6 +6,13 @@ import '../providers/fade_rates_provider.dart';
 import '../providers/pir_sensitivity_provider.dart';
 import '../providers/sensor_data_provider.dart';
 
+String _formatMinutes(int minutes) {
+  if (minutes < 60) return '${minutes}m';
+  final h = minutes ~/ 60;
+  final m = minutes % 60;
+  return m == 0 ? '${h}h' : '${h}h ${m}m';
+}
+
 class AutoSettingsScreen extends ConsumerWidget {
   const AutoSettingsScreen({super.key});
 
@@ -101,6 +108,22 @@ class AutoSettingsScreen extends ConsumerWidget {
                 ref.read(autoConfigProvider.notifier).setTimeoutSeconds(v.round()),
           ),
           const Text('Seconds of no motion before fade-out begins',
+              style: TextStyle(fontSize: 12, color: Colors.grey)),
+          const SizedBox(height: 16),
+
+          // Touch suppress duration
+          Text('Touch Suppress: ${_formatMinutes(config.suppressMinutes)}',
+              style: Theme.of(context).textTheme.titleSmall),
+          Slider(
+            value: config.suppressMinutes.toDouble(),
+            min: 5,
+            max: 480,
+            divisions: 95,
+            label: _formatMinutes(config.suppressMinutes),
+            onChanged: (v) =>
+                ref.read(autoConfigProvider.notifier).setSuppressMinutes(v.round()),
+          ),
+          const Text('How long auto mode stays off after touch-off',
               style: TextStyle(fontSize: 12, color: Colors.grey)),
           const SizedBox(height: 16),
 

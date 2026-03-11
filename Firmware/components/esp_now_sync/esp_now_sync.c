@@ -17,7 +17,7 @@
 static const char *TAG = "esp_now_sync";
 
 #define SYNC_MAGIC      0x4C    /* 'L' for Lamp */
-#define SYNC_VERSION    0x02    /* v2: full scene + lamp_on */
+#define SYNC_VERSION    0x03    /* v3: + auto_suppress_min */
 #define MSG_STATE_SYNC  0x01
 
 #define SYNC_TASK_STACK 3072
@@ -42,9 +42,10 @@ typedef struct __attribute__((packed)) {
     uint8_t  flame_config[7];   /* drift_x, drift_y, restore, radius, bias_y,
                                     flicker_depth, flicker_speed */
     uint8_t  pir_sensitivity;
+    uint16_t auto_suppress_min;
     /* Operational state — decoupled from scene master */
     uint8_t  lamp_on;           /* 0 = off, 1 = on */
-} sync_msg_t;                   /* 29 bytes */
+} sync_msg_t;                   /* 31 bytes */
 
 static uint8_t       s_group_id = 0;
 static uint32_t      s_seq = 0;
@@ -144,6 +145,7 @@ static void esp_now_recv_cb(const esp_now_recv_info_t *info,
                 .fade_out_s       = msg->fade_out_s,
                 .auto_timeout_s   = msg->auto_timeout_s,
                 .auto_lux_threshold = msg->auto_lux_threshold,
+                .auto_suppress_min = msg->auto_suppress_min,
                 .pir_sensitivity  = msg->pir_sensitivity,
                 .lamp_on          = msg->lamp_on,
             },
@@ -253,6 +255,7 @@ void esp_now_sync_broadcast(const scene_t *scene, bool lamp_on)
         .fade_out_s       = scene->fade_out_s,
         .auto_timeout_s   = scene->auto_timeout_s,
         .auto_lux_threshold = scene->auto_lux_threshold,
+        .auto_suppress_min = scene->auto_suppress_min,
         .pir_sensitivity  = scene->pir_sensitivity,
         .lamp_on          = lamp_on ? 1 : 0,
     };

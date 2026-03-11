@@ -45,13 +45,17 @@ class BleCodec {
     return AutoConfig(
       timeoutSeconds: bd.getUint16(0, Endian.little),
       luxThreshold: bd.getUint16(2, Endian.little),
+      suppressMinutes: bytes.length >= 6
+          ? bd.getUint16(4, Endian.little)
+          : 60,
     );
   }
 
   static List<int> encodeAutoConfig(AutoConfig cfg) {
-    final bd = ByteData(4);
+    final bd = ByteData(6);
     bd.setUint16(0, cfg.timeoutSeconds, Endian.little);
     bd.setUint16(2, cfg.luxThreshold, Endian.little);
+    bd.setUint16(4, cfg.suppressMinutes, Endian.little);
     return bd.buffer.asUint8List().toList();
   }
 
@@ -60,9 +64,11 @@ class BleCodec {
   static List<int> encodeSceneWrite(Scene scene) {
     final nameBytes = utf8.encode(scene.name);
     final len = nameBytes.length > 16 ? 16 : nameBytes.length;
-    final bd = ByteData(4);
-    bd.setUint16(0, scene.autoTimeoutSeconds, Endian.little);
-    bd.setUint16(2, scene.autoLuxThreshold, Endian.little);
+    final autoBd = ByteData(4);
+    autoBd.setUint16(0, scene.autoTimeoutSeconds, Endian.little);
+    autoBd.setUint16(2, scene.autoLuxThreshold, Endian.little);
+    final suppressBd = ByteData(2);
+    suppressBd.setUint16(0, scene.autoSuppressMinutes, Endian.little);
     return [
       scene.index,
       len,
@@ -74,7 +80,7 @@ class BleCodec {
       scene.modeFlags,
       scene.fadeInSeconds.clamp(0, 255),
       scene.fadeOutSeconds.clamp(0, 255),
-      ...bd.buffer.asUint8List(),
+      ...autoBd.buffer.asUint8List(),
       scene.flameDriftX,
       scene.flameDriftY,
       scene.flameRestore,
@@ -83,6 +89,7 @@ class BleCodec {
       scene.flameFlickerDepth,
       scene.flameFlickerSpeed,
       scene.pirSensitivity.clamp(0, 31),
+      ...suppressBd.buffer.asUint8List(),
     ];
   }
 
@@ -124,6 +131,12 @@ class BleCodec {
       final flickDepth = (offset < bytes.length) ? bytes[offset++] : 13;
       final flickSpeed = (offset < bytes.length) ? bytes[offset++] : 13;
       final pirSens    = (offset < bytes.length) ? bytes[offset++] : 24;
+      int suppressMin = 60;
+      if (offset + 2 <= bytes.length) {
+        final sBd = ByteData.sublistView(Uint8List.fromList(bytes), offset, offset + 2);
+        suppressMin = sBd.getUint16(0, Endian.little);
+        offset += 2;
+      }
       scenes.add(Scene(
         index: index,
         name: name,
@@ -144,6 +157,7 @@ class BleCodec {
         flameFlickerDepth: flickDepth,
         flameFlickerSpeed: flickSpeed,
         pirSensitivity: pirSens,
+        autoSuppressMinutes: suppressMin,
       ));
     }
     return scenes;

@@ -23,8 +23,11 @@ static uint8_t  s_fade_target_master  = 0;
 static int64_t  s_fade_start_us       = 0;
 static uint32_t s_fade_duration_us    = 0;
 
-static esp_timer_handle_t s_timeout_timer;  /* one-shot inactivity timer */
-static esp_timer_handle_t s_fade_timer;     /* periodic 50 ms fade tick  */
+static esp_timer_handle_t s_timeout_timer;   /* one-shot inactivity timer */
+static esp_timer_handle_t s_fade_timer;      /* periodic 50 ms fade tick  */
+static esp_timer_handle_t s_suppress_timer;  /* touch-off suppress timer  */
+static bool               s_suppressed = false;
+static QueueHandle_t      s_suppress_queue;  /* sensor queue for unsuppress event */
 
 /* Saved scene to restore when entering ON state */
 static scene_t s_active_scene;
@@ -46,6 +49,16 @@ void auto_mode_set_fade_rates(uint8_t fade_in_s, uint8_t fade_out_s)
 /* ── Forward declarations ── */
 static void start_fade_in(bool prep_buffer);
 static void start_fade_out(void);
+
+/* ── Suppress timer callback ── */
+
+static void suppress_cb(void *arg)
+{
+    ESP_LOGI(TAG, "Suppress timer expired → posting unsuppress event");
+    s_suppressed = false;
+    sensor_event_t evt = { .type = SENSOR_EVT_AUTO_UNSUPPRESS };
+    xQueueSend(s_suppress_queue, &evt, 0);
+}
 
 /* ── Inactivity timeout callback ── */
 
@@ -166,6 +179,7 @@ esp_err_t auto_mode_init(void)
     /* s_cfg populated via auto_mode_set_config() called from lamp_control_init */
     s_cfg.timeout_s     = AUTO_TIMEOUT_S_DEFAULT;
     s_cfg.lux_threshold = AUTO_LUX_DEFAULT;
+    s_cfg.suppress_min  = AUTO_SUPPRESS_MIN_DEFAULT;
     lamp_nvs_load_active_scene(&s_active_scene);
 
     esp_timer_create_args_t timeout_args = {
@@ -182,13 +196,20 @@ esp_err_t auto_mode_init(void)
     };
     esp_timer_create(&fade_args, &s_fade_timer);
 
-    ESP_LOGI(TAG, "Auto mode initialised (timeout=%us, lux_thresh=%u)",
-             s_cfg.timeout_s, s_cfg.lux_threshold);
+    esp_timer_create_args_t suppress_args = {
+        .callback = suppress_cb,
+        .name     = "auto_suppress",
+    };
+    esp_timer_create(&suppress_args, &s_suppress_timer);
+
+    ESP_LOGI(TAG, "Auto mode initialised (timeout=%us, lux_thresh=%u, suppress=%umin)",
+             s_cfg.timeout_s, s_cfg.lux_threshold, s_cfg.suppress_min);
     return ESP_OK;
 }
 
 void auto_mode_enable(void)
 {
+    auto_mode_cancel_suppress();
     s_enabled = true;
     s_state = AUTO_STATE_IDLE;
     s_fade_current_master = 0;
@@ -316,4 +337,29 @@ void auto_mode_notify_scene_change(uint8_t warm, uint8_t neutral,
         /* IDLE or ON: scene values updated; lamp_control handles LEDs directly */
         break;
     }
+}
+
+void auto_mode_suppress(uint16_t minutes, QueueHandle_t event_queue)
+{
+    auto_mode_disable();
+    s_suppressed = true;
+    s_suppress_queue = event_queue;
+    esp_timer_stop(s_suppress_timer);
+    uint64_t us = (uint64_t)minutes * 60ULL * 1000000ULL;
+    esp_timer_start_once(s_suppress_timer, us);
+    ESP_LOGI(TAG, "Auto mode suppressed for %u minutes", minutes);
+}
+
+void auto_mode_cancel_suppress(void)
+{
+    if (s_suppressed) {
+        esp_timer_stop(s_suppress_timer);
+        s_suppressed = false;
+        ESP_LOGI(TAG, "Suppress cancelled");
+    }
+}
+
+bool auto_mode_is_suppressed(void)
+{
+    return s_suppressed;
 }

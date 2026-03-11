@@ -170,7 +170,8 @@ void lamp_control_apply_scene(const scene_t *scene)
     lamp_nvs_save_active_scene(scene);
 
     /* Apply all per-scene config atomically */
-    auto_config_t ac = { scene->auto_timeout_s, scene->auto_lux_threshold };
+    auto_config_t ac = { scene->auto_timeout_s, scene->auto_lux_threshold,
+                          scene->auto_suppress_min };
     auto_mode_set_config(&ac);
     auto_mode_set_fade_rates(scene->fade_in_s, scene->fade_out_s);
 
@@ -264,6 +265,7 @@ void lamp_control_apply_sync(const sensor_sync_data_t *sync)
     scene.fade_out_s         = sync->fade_out_s;
     scene.auto_timeout_s     = sync->auto_timeout_s;
     scene.auto_lux_threshold = sync->auto_lux_threshold;
+    scene.auto_suppress_min  = sync->auto_suppress_min;
     scene.flame_drift_x      = sync->flame_config[0];
     scene.flame_drift_y      = sync->flame_config[1];
     scene.flame_restore      = sync->flame_config[2];
@@ -305,6 +307,7 @@ void lamp_control_update_auto_config(const auto_config_t *cfg)
     auto_mode_set_config(cfg);
     s_active_scene.auto_timeout_s     = cfg->timeout_s;
     s_active_scene.auto_lux_threshold = cfg->lux_threshold;
+    s_active_scene.auto_suppress_min  = cfg->suppress_min;
     lamp_nvs_save_active_scene(&s_active_scene);
     broadcast_current_state();
 }
@@ -341,24 +344,31 @@ static void control_task(void *arg)
         if (xQueueReceive(s_sensor_queue, &evt, portMAX_DELAY) == pdTRUE) {
             switch (evt.type) {
             case SENSOR_EVT_TOUCH_SHORT:
-                ESP_LOGI(TAG, "Touch: short tap (on=%d, flags=0x%02x)", s_lamp_on, s_flags);
+                ESP_LOGI(TAG, "Touch: short tap (on=%d, flags=0x%02x suppressed=%d)",
+                         s_lamp_on, s_flags, auto_mode_is_suppressed());
                 if (s_lamp_on) {
                     /* Turn off: route through set_state so sync fires */
                     lamp_control_set_state(s_active_scene.warm, s_active_scene.neutral,
                                            s_active_scene.cool, 0);
                     if (s_flags & MODE_FLAG_AUTO) {
-                        auto_mode_disable();
+                        /* Suppress auto mode temporarily instead of disabling */
+                        auto_mode_suppress(s_active_scene.auto_suppress_min,
+                                           s_sensor_queue);
                     }
-                    s_lamp_on = false;
                 } else {
                     /* Turn on: route through set_state so sync fires */
                     lamp_control_set_state(s_active_scene.warm, s_active_scene.neutral,
                                            s_active_scene.cool, s_active_scene.master > 0
                                            ? s_active_scene.master : 128);
                     if (s_flags & MODE_FLAG_AUTO) {
-                        auto_mode_enable();
+                        if (auto_mode_is_suppressed()) {
+                            /* Still suppressed — restart suppress timer */
+                            auto_mode_suppress(s_active_scene.auto_suppress_min,
+                                               s_sensor_queue);
+                        } else {
+                            auto_mode_enable();
+                        }
                     }
-                    s_lamp_on = true;
                 }
                 break;
 
@@ -384,6 +394,13 @@ static void control_task(void *arg)
                          evt.data.sync.flame_config[5],
                          evt.data.sync.flame_config[6]);
                 lamp_control_apply_sync(&evt.data.sync);
+                break;
+
+            case SENSOR_EVT_AUTO_UNSUPPRESS:
+                ESP_LOGI(TAG, "Auto suppress expired (on=%d, flags=0x%02x)", s_lamp_on, s_flags);
+                if (s_flags & MODE_FLAG_AUTO) {
+                    auto_mode_enable();
+                }
                 break;
 
             case SENSOR_EVT_MOTION_START:
