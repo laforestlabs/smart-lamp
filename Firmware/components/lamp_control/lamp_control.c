@@ -254,6 +254,23 @@ void lamp_control_set_state(uint8_t warm, uint8_t neutral, uint8_t cool, uint8_t
 
 void lamp_control_apply_sync(const sensor_sync_data_t *sync)
 {
+    /* Sanity-check sync data to avoid poisoning NVS with garbage.
+     * A crash-looping peer can broadcast corrupted scenes that get
+     * saved and replayed on every boot.  Reject obviously bad data. */
+    if (sync->master == 0 && sync->lamp_on) {
+        ESP_LOGW(TAG, "Sync rejected: master=0 but lamp_on=1");
+        return;
+    }
+    if (sync->flags & ~(MODE_FLAG_AUTO | MODE_FLAG_FLAME | MODE_FLAG_CIRCADIAN)) {
+        ESP_LOGW(TAG, "Sync rejected: invalid flags 0x%02x", sync->flags);
+        return;
+    }
+    if (sync->pir_sensitivity > PIR_SENS_MAX) {
+        ESP_LOGW(TAG, "Sync rejected: pir_sensitivity=%d > %d",
+                 sync->pir_sensitivity, PIR_SENS_MAX);
+        return;
+    }
+
     /* Build a scene from the sync data, preserving the local name. */
     scene_t scene = s_active_scene;
     scene.warm               = sync->warm;

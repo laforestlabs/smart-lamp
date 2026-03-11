@@ -112,7 +112,13 @@ static void esp_now_recv_cb(const esp_now_recv_info_t *info,
 {
     if (len < (int)sizeof(sync_msg_t)) return;
 
-    const sync_msg_t *msg = (const sync_msg_t *)data;
+    /* Copy to an aligned stack buffer — the WiFi RX buffer has no
+     * guaranteed alignment, and sync_msg_t is packed with uint16_t
+     * fields at odd offsets.  Direct cast → LoadStoreAlignment crash
+     * on Xtensa. */
+    sync_msg_t aligned_copy;
+    memcpy(&aligned_copy, data, sizeof(sync_msg_t));
+    const sync_msg_t *msg = &aligned_copy;
 
     if (msg->magic != SYNC_MAGIC || msg->version != SYNC_VERSION) return;
     if (memcmp(info->src_addr, s_own_mac, 6) == 0) return;
@@ -150,7 +156,7 @@ static void esp_now_recv_cb(const esp_now_recv_info_t *info,
                 .lamp_on          = msg->lamp_on,
             },
         };
-        memcpy(evt.data.sync.flame_config, msg->flame_config, 8);
+        memcpy(evt.data.sync.flame_config, msg->flame_config, 7);
         xQueueSend(s_rx_queue, &evt, 0);  /* non-blocking */
     }
 }
