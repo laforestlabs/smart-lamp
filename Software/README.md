@@ -61,6 +61,8 @@ lib/
     scenes_screen.dart          Scene list with apply/delete
     schedules_screen.dart       Schedule list with day picker + time picker
     ota_screen.dart             File picker + progress bar for firmware update
+    group_sync_screen.dart      ESP-NOW group assignment + sync status
+    settings_screen.dart        Device info, lamp naming, OTA entry point
   |
   widgets/                      Reusable UI components (sliders, cards, pickers)
   storage/                      SharedPreferences wrapper for bonded lamp list

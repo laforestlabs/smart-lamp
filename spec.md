@@ -209,7 +209,9 @@ Recommended ESP-IDF version: **v5.x** (latest stable).
   drives the auto-mode state machine.
 
 **Touch sensor (AT42QT1010)**
-- IO16 (`touchIC_sig`) configured as GPIO input with interrupt on both edges.
+- IO16 (`touchIC_sig`) configured as GPIO input, polled at 20 ms intervals with an
+  integrating debounce filter (5 consecutive identical samples = 100 ms required to
+  register a state change).
 - A software timer distinguishes short tap (< 1 s) from long press (≥ 3 s):
   - Short tap: toggle lamp on/off (or step through brightness in manual mode — TBD)
   - Long press: enter BLE advertising / pairing mode
@@ -358,7 +360,9 @@ fixed-period timer. This is fast enough for smooth motion without overloading th
 | `flame_bias_y` | 2.5 | Vertical resting position (0 = top, 6 = bottom) |
 | `flicker_depth` | 0.15 | Global flicker amplitude (0–1) |
 | `flicker_speed` | 4.0 | Flicker base frequency in Hz |
-| `flame_brightness` | 200 | Master brightness ceiling (0–255) |
+
+*(Flame mode uses the global master brightness from the active scene — there is no
+separate `flame_brightness` parameter.)*
 
 ### 3.8 OTA Firmware Updates
 
@@ -478,7 +482,7 @@ toggles are active.
 |---|---|---|---|
 | **LED State** | `...0001` | Read, Write, Notify | `[warm: u8, neutral: u8, cool: u8, master: u8]` |
 | **Mode** | `...0002` | Read, Write | `[flags: u8]` — bitmask: bit 0 (`0x01`) = auto enabled, bit 1 (`0x02`) = flame enabled. `0x00`=manual, `0x01`=auto, `0x02`=flame, `0x03`=both |
-| **Auto Config** | `...0003` | Read, Write | `[timeout_s: u16 LE, lux_threshold: u16 LE]` |
+| **Auto Config** | `...0003` | Read, Write | `[timeout_s: u16 LE, lux_threshold: u16 LE, suppress_min: u16 LE]` |
 | **Scene Write** | `...0004` | Write | `[index: u8, name_len: u8, name: utf8[name_len], warm: u8, neutral: u8, cool: u8, master: u8, mode_flags: u8, fade_in_s: u8, fade_out_s: u8]` — trailing bytes optional (defaults: mode_flags=0, fade_in_s=3, fade_out_s=10) |
 | **Scene List** | `...0005` | Read, Notify | Length-prefixed list of scenes; same struct as Scene Write |
 | **Schedule Write** | `...0006` | Write | `[index: u8, day_mask: u8, hour: u8, minute: u8, scene_index: u8, enabled: u8]` |
@@ -487,10 +491,11 @@ toggles are active.
 | **OTA Control** | `...0009` | Write, Notify | `[cmd: u8, ...]` — `0x01`=start, `0x02`=end, `0xFF`=abort; notify returns status |
 | **OTA Data** | `...000A` | Write Without Response | Raw firmware bytes (up to MTU−3 per write) |
 | **PIR Sensitivity** | `...000B` | Read, Write | `[level: u8]` — 0 (closest) to 31 (farthest); DAC output on IO25 controls BM612 SENS pin |
-| **Flame Config** | `...000C` | Read, Write | `[drift_x: u8, drift_y: u8, restore: u8, radius: u8, bias_y: u8, flicker_depth: u8, flicker_speed: u8, brightness: u8]` — all scaled 0–255 |
+| **Flame Config** | `...000C` | Read, Write | `[drift_x: u8, drift_y: u8, restore: u8, radius: u8, bias_y: u8, flicker_depth: u8, flicker_speed: u8]` — all scaled 0–255; flame uses global master brightness |
 | **Device Info** | `...000D` | Read | `[fw_version: utf8]` |
 | **Sync Config** | `...000E` | Read, Write | Read: `[group_id: u8, wifi_mac: 6B]`; Write: `[group_id: u8]` — 0 disables sync, 1–255 joins group |
 | **Lamp Name** | `...000F` | Read, Write | `[name: utf8]` — up to 32 bytes; custom user-assigned name, stored in NVS |
+| **Time Sync** | `...0010` | Write | `[epoch: u32 LE]` — Unix epoch seconds; sets lamp's internal clock for circadian/schedule features |
 
 All multi-byte integers are **little-endian**.
 
@@ -615,13 +620,13 @@ disconnect it before booting with BLE.
 - **Do not** modify `esp_phy/src/phy_init.c` to change the fallback calibration mode —
   the default (`PHY_RF_CAL_FULL` when no stored data exists) is correct.
 
-### 8.3 Board Status (as of 2026-03-02)
+### 8.3 Board Status (as of 2026-03-12)
 
 | Board | MAC (BT) | Device Name | Status |
 |---|---|---|---|
-| SN001 | c4:4f:33:11:aa:9f | SmartLamp-AA9F | Flashed (OTA), BLE + ESP-NOW working. Needs OTA to latest firmware. LEDs and light sensor need PCB rework. |
-| SN002 | 30:ae:a4:07:59:d2 | SmartLamp-59D2 | Flashed (OTA), BLE + ESP-NOW working, latest firmware (auto-mode on/off fix). Motion sensor verified. LEDs and light sensor need PCB rework. |
-| SN003 | 30:ae:a4:07:6b:68 | SmartLamp-6B68 | Flashed (serial), latest firmware. Group sync group=1. Connected to serial for debugging. |
+| SN001 | c4:4f:33:11:aa:9f | SmartLamp-AA9F | Serial flashed (2026-03-11) with alignment-fix firmware. NVS erased. LEDs and light sensor need PCB rework. |
+| SN002 | 30:ae:a4:07:59:d2 | SmartLamp-59D2 | Serial flashed (2026-03-11) with pre-alignment-fix firmware. NVS erased. Needs reflash with latest (alignment fix + sync validation). LEDs and light sensor need PCB rework. |
+| SN003 | 30:ae:a4:07:6b:6a | SmartLamp-6B6A | Serial flashed (2026-03-08) with config-broadcast-fix firmware. Needs update to latest. Connected to serial for debugging. |
 
 **Verified working:** BLE advertising (indefinite), BLE connection + bonding, MTU 512,
 GATT read/write/notify, Service Changed indication, PIR motion detection,
@@ -639,7 +644,7 @@ brightness, colour, mode flags) to each other via ESP-NOW over WiFi channel 1.
 **Architecture:**
 - WiFi STA mode (no AP connection) provides the radio for ESP-NOW
 - BLE init must happen BEFORE WiFi init on ESP32 for coexistence
-- 13-byte packed broadcast message (magic, version, group_id, sequence, WNCM, flags)
+- 31-byte packed broadcast message (magic, version, group_id, msg_type, sequence, scene settings, auto/flame config, operational state)
 - Length-1 FreeRTOS queue with `xQueueOverwrite` for broadcast coalescing
 - Loop prevention: `s_from_sync` flag in `lamp_control.c`; `lamp_control_apply_sync()`
   applies flags + state + `s_lamp_on` atomically
@@ -651,7 +656,8 @@ brightness, colour, mode flags) to each other via ESP-NOW over WiFi channel 1.
 - Flame mode task race condition: rapid start/stop via sync created overlapping tasks.
   Fixed with semaphore-based task join (`s_task_done` binary semaphore).
 - ESP-NOW broadcast unreliability with BLE coexistence: messages lost ~50% of the time.
-  Mitigated by double-send with 15 ms gap in the TX task.
+  Mitigated by 12 retries with front-loaded jittered gaps over ~2 s (tight jitter for
+  first 3 retries, wider jitter for later retries). Achieves 98% delivery rate.
 
 **Lamp naming:** Each lamp stores a user-assigned name (up to 32 bytes UTF-8) in NVS,
 readable and writable via the Lamp Name BLE characteristic (`0xAA0F`). The Flutter app
@@ -726,6 +732,6 @@ adb -s 18121JECB02951 install -r build/app/outputs/flutter-apk/app-debug.apk
 | 6 | BLE security level | *Just Works* is convenient but unauthenticated. Upgrade to Passkey Entry if lamp is used in shared/public spaces |
 | 7 | Custom service UUID | Generate a proper random 128-bit UUID before finalising the protocol |
 | 8 | Maximum scene / schedule count | 16 each is a working assumption; verify against available NVS flash space |
-| 9 | IO25 / PIR_sens usage | Schematic routes IO25 to BM612 SENS via 10 KΩ — confirm whether firmware drives this pin or if it is purely a passive resistor network |
+| ~~9~~ | ~~IO25 / PIR_sens usage~~ | **Resolved:** Firmware drives IO25 as DAC output (DAC_CHAN_0) to control BM612 sensitivity. 32 discrete levels, adjustable via BLE (char 0x000B) and persisted in NVS. |
 | 10 | Ambient light ADC calibration | Determine whether a one-point NVS calibration is sufficient or if a lookup table is needed for the phototransistor response curve |
-| 11 | Touch tap behaviour | Decide short-tap action: simple on/off toggle, or step through brightness levels |
+| ~~11~~ | ~~Touch tap behaviour~~ | **Resolved:** Short tap = simple on/off toggle. Polling-based debounce (20 ms interval, 5 consecutive samples). |

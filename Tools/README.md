@@ -40,7 +40,7 @@ SERIAL_PORT = "/dev/ttyUSB0"       # Monitor lamp (serial)
 | File | Purpose |
 |------|---------|
 | `lamp_test.py` | Reusable library: `LampBLE` (async BLE control) + `SerialMonitor` (threaded serial log capture) |
-| `test_sync.py` | Automated test suite (13 test functions, 15 assertions) |
+| `test_sync.py` | Automated test suite (19 test functions) |
 | `bench_sync.py` | A/B benchmark tool with JSON persistence and comparison |
 
 ---
@@ -109,6 +109,12 @@ python3 test_sync.py --list
 | `test_rapid_burst` | 20 rapid changes, verify convergence within 15 s |
 | `test_per_retry_delivery_rate` | Count how many of 12 TX retries physically arrive |
 | `test_on_off_rapid_toggle` | 5 rapid on/off cycles, verify final state converges |
+| `test_flame_config_sync` | Flame config changes propagate via ESP-NOW |
+| `test_auto_config_sync` | Auto config changes propagate via ESP-NOW |
+| `test_pir_sensitivity_sync` | PIR sensitivity changes propagate via ESP-NOW |
+| `test_concurrent_ble_sync` | BLE writes during active sync don't cause conflicts |
+| `test_peer_discovery` | Peer discovery protocol message handling |
+| `test_dedup_different_seq` | RX dedup correctly accepts different sequence numbers |
 
 ---
 

@@ -91,6 +91,6 @@ flutter run
 
 ```bash
 cd Tools
-python3 test_sync.py          # All 15 tests
+python3 test_sync.py          # All 19 tests
 python3 bench_sync.py --label run1  # Benchmark with JSON output
 ```
